@@ -19,11 +19,19 @@ KOS_INIT_FLAGS(INIT_DEFAULT);
 #define CART_ROM_DATA    (*(volatile uint16_t *)0xA05F7008u)
 
 static pvr_ptr_t font_texture;
-static const uint32_t offsets[] = { 0x00000000u, 0x00000100u, 0x00010000u, 0x00100000u };
-static uint16_t values[4][4];
-static uint16_t repeat_values[4][4];
-static int read_ok[4];
-static int stable[4];
+static const uint32_t offsets[] = {
+    0x00000000u, 0x00000100u, 0x00010000u,
+    0x00100000u, 0x00200000u, 0x00300000u, 0x00400000u
+};
+static const uint16_t expected_markers[3][4] = {
+    { 0x4656u, 0x5033u, 0x4f49u, 0x2131u }, /* VF3PIO1! */
+    { 0x4656u, 0x5033u, 0x4f49u, 0x2132u }, /* VF3PIO2! */
+    { 0x4656u, 0x5033u, 0x4f49u, 0x2133u }  /* VF3PIO3! */
+};
+static uint16_t values[7][4];
+static uint16_t repeat_values[7][4];
+static int stable[7];
+static int marker_ok[7];
 
 static void font_init(void) {
     uint16_t *vram = (uint16_t *)font_texture;
@@ -72,29 +80,44 @@ static void draw_screen(void) {
     draw_text(24, 20, "NAOMI CARTRIDGE PIO READ PROBE");
     draw_text(24, 52, "READ ONLY - NETDIMM/CART ACCESS");
     draw_text(24, 92, "OFFSET       WORD0 WORD1 WORD2 WORD3");
-    for(int i = 0; i < 4; ++i) {
+    for(int i = 0; i < 7; ++i) {
+        const char *check;
         snprintf(line, sizeof(line), "%08lx %04x  %04x  %04x  %04x",
             (unsigned long)offsets[i], values[i][0], values[i][1],
             values[i][2], values[i][3]);
-        draw_text(24, 132 + i * 36, line);
+        draw_text(24, 132 + i * 32, line);
+        if(i >= 3 && i <= 5)
+            check = marker_ok[i] ? "MARKER OK" : "BAD MARKER";
+        else if(i == 6)
+            check = marker_ok[i] ? "EOF FFFF" : "NOT FFFF";
+        else
+            check = "DATA SAMPLE";
         snprintf(line, sizeof(line), "REPEAT: %s  %s",
-            read_ok[i] ? "READ OK" : "READ NOT STABLE",
-            stable[i] ? "MATCH" : "MISMATCH");
-        draw_text(24, 148 + i * 36, line);
+            stable[i] ? "MATCH" : "MISMATCH", check);
+        draw_text(24, 148 + i * 32, line);
     }
-    draw_text(24, 328, "PIO AUTO-INCREMENT: 16-BIT WORDS");
-    draw_text(24, 360, "COMPARE REPEATED READS; NO SERIAL");
+    draw_text(24, 388, "PIO AUTO-INCREMENT: 16-BIT WORDS");
+    draw_text(24, 420, "MARKERS AT 1/2/3 MiB; EOF AT 4 MiB");
     pvr_list_finish(); pvr_scene_finish();
 }
 
 int main(void) {
-    for(int i = 0; i < 4; ++i) {
+    for(int i = 0; i < 7; ++i) {
         read_words(offsets[i], values[i]);
         read_words(offsets[i], repeat_values[i]);
         stable[i] = 1;
         for(int j = 0; j < 4; ++j)
             if(values[i][j] != repeat_values[i][j]) stable[i] = 0;
-        read_ok[i] = 1;
+        if(i >= 3 && i <= 5) {
+            marker_ok[i] = 1;
+            for(int j = 0; j < 4; ++j)
+                if(values[i][j] != expected_markers[i - 3][j]) marker_ok[i] = 0;
+        }
+        else if(i == 6) {
+            marker_ok[i] = 1;
+            for(int j = 0; j < 4; ++j)
+                if(values[i][j] != 0xFFFFu) marker_ok[i] = 0;
+        }
     }
     pvr_init_defaults(); pvr_set_bg_color(0.02f, 0.06f, 0.12f);
     font_texture = pvr_mem_malloc(256 * 256 * 2);
