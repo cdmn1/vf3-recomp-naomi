@@ -75,6 +75,8 @@ static bool run_softfloat_rounding_test() {
     return true;
 }
 
+static unsigned ppc_failure_line = 0;
+
 static bool run_store_single_rounding_test() {
     static const uint32_t expected[2][4] = {
         { 0x3dcccccd, 0x3dcccccc, 0x3dcccccd, 0x3dcccccc },
@@ -100,7 +102,7 @@ static bool run_store_single_rounding_test() {
             if (cpu.execute(1) != 1 ||
                 *reinterpret_cast<uint32_t *>(guest_ram + 0x100) != expected[sign][mode] ||
                 cpu.s.fatal)
-                return false;
+                { ppc_failure_line = __LINE__; return false; }
 
             cpu.reset();
             cpu.s.fpscr = mode;
@@ -113,7 +115,7 @@ static bool run_store_single_rounding_test() {
             if (cpu.execute(1) != 1 ||
                 *reinterpret_cast<uint32_t *>(guest_ram + 0x100) != expected[sign][mode] ||
                 cpu.s.fatal)
-                return false;
+                { ppc_failure_line = __LINE__; return false; }
         }
     }
     return true;
@@ -155,7 +157,7 @@ static bool run_interpreter_rounding_test() {
             cpu.s.npc = 0;
             program[0] = fdiv;
             if (cpu.execute(1) != 1 || cpu.s.f[1].i != expected_double[sign][mode] || cpu.s.fatal)
-                return false;
+                { ppc_failure_line = __LINE__; return false; }
 
             cpu.reset();
             cpu.s.fpscr = mode;
@@ -165,14 +167,14 @@ static bool run_interpreter_rounding_test() {
             cpu.s.npc = 0;
             program[0] = fdivs;
             if (cpu.execute(1) != 1 || cpu.s.fatal)
-                return false;
+                { ppc_failure_line = __LINE__; return false; }
 
             union FloatBits { float f; uint32_t i; } expected;
             expected.i = expected_single[sign][mode];
             ppc::Fpr expected_fpr;
             expected_fpr.d = double(expected.f);
             if (cpu.s.f[1].i != expected_fpr.i)
-                return false;
+                { ppc_failure_line = __LINE__; return false; }
         }
     }
     return run_store_single_rounding_test() && run_basic_fpu_rounding_test();
@@ -226,7 +228,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fadd;
         if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != add_positive[mode])
-            return false;
+            { ppc_failure_line = __LINE__; return false; }
 
         // -1 + -2^-53 exercises the opposite sign/direction.
         cpu.reset();
@@ -236,7 +238,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fadd;
         if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != add_negative[mode])
-            return false;
+            { ppc_failure_line = __LINE__; return false; }
 
         // sqrt(2) has distinct directed-rounding results.
         cpu.reset();
@@ -245,7 +247,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fsqrt;
         if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != sqrt_two[mode])
-            return false;
+            { ppc_failure_line = __LINE__; return false; }
 
         // fctiw follows FPSCR; fctiwz always truncates toward zero.
         cpu.reset();
@@ -255,7 +257,7 @@ static bool run_basic_fpu_rounding_test() {
         program[0] = fctiw;
         if (cpu.execute(1) != 1 || cpu.s.fatal ||
             uint32_t(cpu.s.f[1].i) != integer_nearest_modes[mode])
-            return false;
+            { ppc_failure_line = __LINE__; return false; }
 
         cpu.reset();
         cpu.s.fpscr = mode;
@@ -263,7 +265,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fctiwz;
         if (cpu.execute(1) != 1 || cpu.s.fatal || uint32_t(cpu.s.f[1].i) != 1)
-            return false;
+            { ppc_failure_line = __LINE__; return false; }
     }
 
     // fsubs and fmuls are also exercised under all four modes with exact inputs.
@@ -275,7 +277,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fsub;
         if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].d != 2.0)
-            return false;
+            { ppc_failure_line = __LINE__; return false; }
 
         cpu.reset();
         cpu.s.fpscr = mode;
@@ -284,7 +286,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fmul;
         if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].d != 3.0)
-            return false;
+            { ppc_failure_line = __LINE__; return false; }
     }
     // Multiply-add family: the reference model deliberately rounds the product
     // and sum separately (not as a fused operation). Choose an exact product and
@@ -322,7 +324,7 @@ static bool run_basic_fpu_rounding_test() {
                 cpu.s.f[4].d = 1.0;
                 cpu.s.pc = cpu.s.npc = 0;
                 program[0] = double_ops[op];
-                if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != expected_bits) return false;
+                if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != expected_bits) { ppc_failure_line = __LINE__; return false; }
 
                 const double single_addend = (sign ^ subtract_form) ? -0x1p-24 : 0x1p-24;
                 cpu.reset();
@@ -333,7 +335,7 @@ static bool run_basic_fpu_rounding_test() {
                 cpu.s.pc = cpu.s.npc = 0;
                 program[0] = single_ops[op];
                 const uint32_t expected_single_bits = expected_value_sign < 0 ? fma_negative_halfway[mode] : fma_positive_halfway[mode];
-                if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(expected_single_bits)) return false;
+                if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(expected_single_bits)) { ppc_failure_line = __LINE__; return false; }
             }
         }
     }
@@ -357,7 +359,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = 0x1p-24;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fadds;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) { ppc_failure_line = __LINE__; return false; }
 
         cpu.reset();
         cpu.s.fpscr = mode;
@@ -365,7 +367,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = -0x1p-24;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fadds;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) { ppc_failure_line = __LINE__; return false; }
 
         // fsubs: 1 - (-2^-24) and -1 - 2^-24 exercise both directions.
         cpu.reset();
@@ -374,7 +376,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = -0x1p-24;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fsubs;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) { ppc_failure_line = __LINE__; return false; }
 
         cpu.reset();
         cpu.s.fpscr = mode;
@@ -382,7 +384,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = 0x1p-24;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fsubs;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) { ppc_failure_line = __LINE__; return false; }
 
         // fmuls: exact binary64 product is a binary32 halfway value.
         cpu.reset();
@@ -391,7 +393,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = 1.0;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fmuls;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) { ppc_failure_line = __LINE__; return false; }
 
         // Negative fmuls checks directed rounding in the opposite direction.
         cpu.reset();
@@ -400,7 +402,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = 1.0;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fmuls;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) { ppc_failure_line = __LINE__; return false; }
 
         // Reciprocal estimate opcode is exact in this upstream reference model;
         // it returns a single-precision 1/x, so 1/3 exposes all four modes.
@@ -416,14 +418,14 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[2].d = 3.0;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fres;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(reciprocal_positive[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(reciprocal_positive[mode])) { ppc_failure_line = __LINE__; return false; }
 
         cpu.reset();
         cpu.s.fpscr = mode;
         cpu.s.f[2].d = -3.0;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fres;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(reciprocal_negative[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(reciprocal_negative[mode])) { ppc_failure_line = __LINE__; return false; }
 
         // frsp rounds a binary64 FPR value directly to binary32 under FPSCR.RN.
         const uint32_t frsp = (63u << 26) | (1u << 21) | (2u << 11) | (12u << 1);
@@ -432,14 +434,14 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[2].d = 1.0 + 0x1p-24;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = frsp;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) { ppc_failure_line = __LINE__; return false; }
 
         cpu.reset();
         cpu.s.fpscr = mode;
         cpu.s.f[2].d = -(1.0 + 0x1p-24);
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = frsp;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) { ppc_failure_line = __LINE__; return false; }
 
         // fsqrts checks a non-exact square root rounded to binary32.
         static const uint32_t sqrt_two_single[4] = {
@@ -451,7 +453,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[2].d = 2.0;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fsqrts;
-        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(sqrt_two_single[mode])) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(sqrt_two_single[mode])) { ppc_failure_line = __LINE__; return false; }
     }
     return true;
 }
@@ -556,6 +558,7 @@ static void draw_screen(bool passed, bool softfloat_passed, bool ppc_rounding_pa
     draw_text(40.0f, 224.0f, "SYNTHETIC 3-INSTRUCTION TEST");
     draw_text(40.0f, 272.0f, softfloat_passed ? "SOFTFLOAT 4-MODE TEST: PASS" : "SOFTFLOAT 4-MODE TEST: FAIL");
     draw_text(40.0f, 320.0f, ppc_rounding_passed ? "PPC FPU 4-MODE TEST: PASS" : "PPC FPU 4-MODE TEST: FAIL");
+    if (!ppc_rounding_passed) { char detail[48]; std::snprintf(detail, sizeof(detail), "PPC FAIL LINE: %u", ppc_failure_line); draw_text(40.0f, 368.0f, detail); }
     pvr_list_finish();
     pvr_scene_finish();
 }
