@@ -130,8 +130,6 @@ for old, new in replacements:
         raise SystemExit(f"floating-point operation not found: {old}")
     source = source.replace(old, new)
 
-replace_once('''\t\tuint32_t mode = x == 15 ? 1 : s.fpscr & 3;
-\t\t switch (mode) {''', '___NO_MATCH___', 'sentinel') if False else None
 # Replace the conversion block without relying on whitespace-sensitive sub-blocks.
 old = '''\t\tuint32_t mode = x == 15 ? 1 : s.fpscr & 3;
 \t\tswitch (mode) {
