@@ -189,7 +189,7 @@ static bool run_basic_fpu_rounding_test() {
     };
     static const uint64_t sqrt_two[4] = {
         0x3ff6a09e667f3bcdull, 0x3ff6a09e667f3bccull,
-        0x3ff6a09e667f3bceull, 0x3ff6a09e667f3bcdull
+        0x3ff6a09e667f3bcdull, 0x3ff6a09e667f3bccull
     };
     static const uint32_t integer_nearest_modes[4] = { 2, 1, 2, 1 };
 
