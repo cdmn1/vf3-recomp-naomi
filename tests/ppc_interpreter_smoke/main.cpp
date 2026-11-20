@@ -81,6 +81,8 @@ static unsigned ppc_failure_op = 0;
 static unsigned ppc_failure_sign = 0;
 static uint64_t ppc_failure_actual = 0;
 static uint64_t ppc_failure_expected = 0;
+static unsigned ppc_failure_executed = 0;
+static unsigned ppc_failure_fatal = 0;
 
 static bool run_store_single_rounding_test() {
     static const uint32_t expected[2][4] = {
@@ -348,7 +350,19 @@ static bool run_basic_fpu_rounding_test() {
                 cpu.s.pc = cpu.s.npc = 0;
                 program[0] = single_ops[op];
                 const uint32_t expected_single_bits = expected_value_sign < 0 ? fma_negative_halfway[mode] : fma_positive_halfway[mode];
-                if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(expected_single_bits)) { ppc_failure_line = __LINE__; return false; }
+                const int executed_single = cpu.execute(1);
+                const uint64_t expected_single_wide = widened_float_bits(expected_single_bits);
+                if (executed_single != 1 || cpu.s.fatal || cpu.s.f[1].i != expected_single_wide) {
+                    ppc_failure_line = __LINE__;
+                    ppc_failure_mode = mode;
+                    ppc_failure_op = op;
+                    ppc_failure_sign = sign;
+                    ppc_failure_actual = cpu.s.f[1].i;
+                    ppc_failure_expected = expected_single_wide;
+                    ppc_failure_executed = executed_single;
+                    ppc_failure_fatal = cpu.s.fatal ? 1 : 0;
+                    return false;
+                }
             }
         }
     }
@@ -579,6 +593,8 @@ static void draw_screen(bool passed, bool softfloat_passed, bool ppc_rounding_pa
         draw_text(40.0f, 400.0f, detail);
         snprintf(detail, sizeof(detail), "EXP %08x%08x", static_cast<unsigned>(ppc_failure_expected >> 32), static_cast<unsigned>(ppc_failure_expected));
         draw_text(40.0f, 432.0f, detail);
+        snprintf(detail, sizeof(detail), "EXEC %u FATAL %u", ppc_failure_executed, ppc_failure_fatal);
+        draw_text(40.0f, 464.0f, detail);
     }
     pvr_list_finish();
     pvr_scene_finish();
