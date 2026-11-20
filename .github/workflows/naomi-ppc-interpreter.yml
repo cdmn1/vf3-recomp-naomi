@@ -161,6 +161,7 @@ jobs:
           test -s tests/ppc_interpreter_smoke/vf3_ppc_interpreter_smoke.elf
 
       - name: Compile SH-4 FPU rounding probe
+        if: always()
         env:
           KOS_BASE: ${{ github.workspace }}/kos
         run: |
@@ -190,6 +191,29 @@ jobs:
           BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/naomi_fpu_probe rom
           test -s "tests/naomi_fpu_probe/$FPU_ROM"
           cp "tests/naomi_fpu_probe/$FPU_ROM" build-artifacts/
+
+      - name: Package SH-4 FPU probe independently
+        if: always()
+        env:
+          KOS_BASE: ${{ github.workspace }}/kos
+        run: |
+          set -eo pipefail
+          export KOS_SUBARCH=naomi
+          . "$KOS_BASE/environ.sh"
+          export KOS_INC_PATHS_CPP=""
+          FPU_ROM="naomi_sh4_fpu_probe-v${GITHUB_RUN_NUMBER}.bin"
+          BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/naomi_fpu_probe rom
+          test -s "tests/naomi_fpu_probe/$FPU_ROM"
+          mkdir -p fpu-probe-artifact
+          cp "tests/naomi_fpu_probe/$FPU_ROM" fpu-probe-artifact/
+
+      - name: Upload SH-4 FPU probe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: naomi-sh4-fpu-probe-v${{ github.run_number }}
+          path: fpu-probe-artifact/*
+          if-no-files-found: error
 
       - name: Validate and describe ROM
         run: |
