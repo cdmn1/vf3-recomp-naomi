@@ -75,6 +75,63 @@ static bool run_softfloat_rounding_test() {
     return true;
 }
 
+static bool run_interpreter_rounding_test() {
+    static const uint64_t expected_double[2][4] = {
+        { 0x3fb999999999999aull, 0x3fb9999999999999ull,
+          0x3fb999999999999aull, 0x3fb9999999999999ull },
+        { 0xbfb999999999999aull, 0xbfb9999999999999ull,
+          0xbfb9999999999999ull, 0xbfb999999999999aull }
+    };
+    static const uint32_t expected_single[2][4] = {
+        { 0x3dcccccd, 0x3dcccccc, 0x3dcccccd, 0x3dcccccc },
+        { 0xbdcccccd, 0xbdcccccc, 0xbdcccccc, 0xbdcccccd }
+    };
+
+    std::memset(guest_ram, 0, sizeof(guest_ram));
+    DummyBus bus;
+    ppc::Cpu cpu;
+    cpu.attach(&bus, guest_ram, dummy_crom);
+    cpu.configure(0, 2, 66000000, 0);
+
+    // fdiv f1,f2,f3 (primary opcode 63, XO 18).
+    // fdivs uses the same fields with primary opcode 59.
+    uint32_t *program = reinterpret_cast<uint32_t *>(guest_ram);
+    const uint32_t fdiv = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (18u << 1);
+    const uint32_t fdivs = (59u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (18u << 1);
+
+    for (unsigned sign = 0; sign < 2; ++sign) {
+        for (unsigned mode = 0; mode < 4; ++mode) {
+            cpu.reset();
+            cpu.s.fpscr = mode;
+            cpu.s.f[2].d = sign ? -1.0 : 1.0;
+            cpu.s.f[3].d = 10.0;
+            cpu.s.pc = 0;
+            cpu.s.npc = 0;
+            program[0] = fdiv;
+            if (cpu.execute(1) != 1 || cpu.s.f[1].i != expected_double[sign][mode] || cpu.s.fatal)
+                return false;
+
+            cpu.reset();
+            cpu.s.fpscr = mode;
+            cpu.s.f[2].d = sign ? -1.0 : 1.0;
+            cpu.s.f[3].d = 10.0;
+            cpu.s.pc = 0;
+            cpu.s.npc = 0;
+            program[0] = fdivs;
+            if (cpu.execute(1) != 1 || cpu.s.fatal)
+                return false;
+
+            union FloatBits { float f; uint32_t i; } expected;
+            expected.i = expected_single[sign][mode];
+            ppc::Fpr expected_fpr;
+            expected_fpr.d = double(expected.f);
+            if (cpu.s.f[1].i != expected_fpr.i)
+                return false;
+        }
+    }
+    return true;
+}
+
 static bool run_interpreter_test() {
     std::memset(guest_ram, 0, sizeof(guest_ram));
 
@@ -165,7 +222,7 @@ static void draw_text(float x, float y, const char *s) {
     }
 }
 
-static void draw_screen(bool passed, bool softfloat_passed) {
+static void draw_screen(bool passed, bool softfloat_passed, bool ppc_rounding_passed) {
     pvr_wait_ready();
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_TR_POLY);
@@ -174,6 +231,7 @@ static void draw_screen(bool passed, bool softfloat_passed) {
     draw_text(40.0f, 160.0f, passed ? "SH-4 EXECUTION: PASS" : "SH-4 EXECUTION: FAIL");
     draw_text(40.0f, 224.0f, "SYNTHETIC 3-INSTRUCTION TEST");
     draw_text(40.0f, 272.0f, softfloat_passed ? "SOFTFLOAT 4-MODE TEST: PASS" : "SOFTFLOAT 4-MODE TEST: FAIL");
+    draw_text(40.0f, 320.0f, ppc_rounding_passed ? "PPC FPU 4-MODE TEST: PASS" : "PPC FPU 4-MODE TEST: FAIL");
     pvr_list_finish();
     pvr_scene_finish();
 }
@@ -181,6 +239,7 @@ static void draw_screen(bool passed, bool softfloat_passed) {
 int main() {
     const bool passed = run_interpreter_test();
     const bool softfloat_passed = run_softfloat_rounding_test();
+    const bool ppc_rounding_passed = run_interpreter_rounding_test();
     printf("VF3 Recomp PPC interpreter smoke test: %s\n", passed ? "PASS" : "FAIL");
 
     pvr_init_defaults();
@@ -194,7 +253,7 @@ int main() {
     font_init();
 
     for(;;) {
-        draw_screen(passed, softfloat_passed);
+        draw_screen(passed, softfloat_passed, ppc_rounding_passed);
         thd_sleep(16);
     }
     return 0;
