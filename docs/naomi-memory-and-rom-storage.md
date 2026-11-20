@@ -85,7 +85,7 @@ The read-only v55 probe ran on real Naomi hardware. Reads at offsets 0x00000000,
 
 The v55 PIO screen labelled each read as "READ OK", but that label was unconditional: the PIO interface does not return a read-status bit. The only measured property was repeatability. The 0xFFFF result at 1 MiB is consistent with reading beyond the end of the small probe ROM and does not establish a NetDIMM address-space limit.
 
-### v56 follow-up: known markers in a 4 MiB image
+### v59 follow-up: known markers in a 4 MiB image (CI build passed)
 
 The next probe build keeps the executable segment and Naomi header intact, then extends the ROM image to exactly 4 MiB with three 8-byte markers outside the executable segment:
 
