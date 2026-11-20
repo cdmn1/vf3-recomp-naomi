@@ -278,6 +278,89 @@ static bool run_basic_fpu_rounding_test() {
         if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].d != 3.0)
             return false;
     }
+    // Single-precision arithmetic rounds the operation result to binary32.
+    // 1 + 2^-24 is exactly halfway between adjacent binary32 values.
+    static const uint32_t positive_halfway[4] = {
+        0x3f800000, 0x3f800000, 0x3f800001, 0x3f800000
+    };
+    static const uint32_t negative_halfway[4] = {
+        0xbf800000, 0xbf800000, 0xbf800000, 0xbf800001
+    };
+    const uint32_t fadds = (59u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (21u << 1);
+    const uint32_t fsubs = (59u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (20u << 1);
+    const uint32_t fmuls = (59u << 26) | (1u << 21) | (2u << 16) | (3u << 6) | (25u << 1);
+    for (unsigned mode = 0; mode < 4; ++mode) {
+        // fadds: positive and negative halfway cases.
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 1.0;
+        cpu.s.f[3].d = 0x1p-24;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fadds;
+        if (cpu.execute(1) != 1 || cpu.s.fatal ||
+            uint32_t(cpu.s.f[1].i) != (uint32_t(positive_halfway[mode]) << 32 | 0u)) {
+            // FPRs hold the binary32 result widened back to binary64; compare below.
+            union FloatBits { float f; uint32_t i; } expected;
+            expected.i = positive_halfway[mode];
+            ppc::Fpr widened;
+            widened.d = double(expected.f);
+            if (cpu.s.f[1].i != widened.i) return false;
+        }
+
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = -1.0;
+        cpu.s.f[3].d = -0x1p-24;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fadds;
+        if (cpu.execute(1) != 1 || cpu.s.fatal) return false;
+        union FloatBits { float f; uint32_t i; } expected_negative;
+        expected_negative.i = negative_halfway[mode];
+        ppc::Fpr widened_negative;
+        widened_negative.d = double(expected_negative.f);
+        if (cpu.s.f[1].i != widened_negative.i) return false;
+
+        // fsubs: 1 - (-2^-24) and -1 - 2^-24 exercise both directions.
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 1.0;
+        cpu.s.f[3].d = -0x1p-24;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fsubs;
+        if (cpu.execute(1) != 1 || cpu.s.fatal) return false;
+        union FloatBits { float f; uint32_t i; } expected_sub_positive;
+        expected_sub_positive.i = positive_halfway[mode];
+        ppc::Fpr widened_sub_positive;
+        widened_sub_positive.d = double(expected_sub_positive.f);
+        if (cpu.s.f[1].i != widened_sub_positive.i) return false;
+
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = -1.0;
+        cpu.s.f[3].d = 0x1p-24;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fsubs;
+        if (cpu.execute(1) != 1 || cpu.s.fatal) return false;
+        union FloatBits { float f; uint32_t i; } expected_sub_negative;
+        expected_sub_negative.i = negative_halfway[mode];
+        ppc::Fpr widened_sub_negative;
+        widened_sub_negative.d = double(expected_sub_negative.f);
+        if (cpu.s.f[1].i != widened_sub_negative.i) return false;
+
+        // fmuls: exact binary64 product is a binary32 halfway value.
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 1.0 + 0x1p-24;
+        cpu.s.f[3].d = 1.0;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fmuls;
+        if (cpu.execute(1) != 1 || cpu.s.fatal) return false;
+        union FloatBits { float f; uint32_t i; } expected_mul;
+        expected_mul.i = positive_halfway[mode];
+        ppc::Fpr widened_mul;
+        widened_mul.d = double(expected_mul.f);
+        if (cpu.s.f[1].i != widened_mul.i) return false;
+    }
     return true;
 }
 
