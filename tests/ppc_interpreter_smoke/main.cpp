@@ -558,7 +558,7 @@ static void draw_screen(bool passed, bool softfloat_passed, bool ppc_rounding_pa
     draw_text(40.0f, 224.0f, "SYNTHETIC 3-INSTRUCTION TEST");
     draw_text(40.0f, 272.0f, softfloat_passed ? "SOFTFLOAT 4-MODE TEST: PASS" : "SOFTFLOAT 4-MODE TEST: FAIL");
     draw_text(40.0f, 320.0f, ppc_rounding_passed ? "PPC FPU 4-MODE TEST: PASS" : "PPC FPU 4-MODE TEST: FAIL");
-    if (!ppc_rounding_passed) { char detail[48]; std::snprintf(detail, sizeof(detail), "PPC FAIL LINE: %u", ppc_failure_line); draw_text(40.0f, 368.0f, detail); }
+    if (!ppc_rounding_passed) { char detail[48]; snprintf(detail, sizeof(detail), "PPC FAIL LINE: %u", ppc_failure_line); draw_text(40.0f, 368.0f, detail); }
     pvr_list_finish();
     pvr_scene_finish();
 }
