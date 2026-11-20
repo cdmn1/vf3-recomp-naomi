@@ -150,9 +150,10 @@ jobs:
           KOS_BASE: ${{ github.workspace }}/kos
           VF3_RECOMP_DIR: ${{ github.workspace }}/vf3-recomp
         run: |
-          set -euo pipefail
+          # KOS's environment scripts reference optional variables that may be unset.
+          # Match the working Naomi projects: use -e/-o pipefail, but not nounset (-u).
+          set -eo pipefail
           export KOS_SUBARCH=naomi
-          export KOS_INC_PATHS=""
           . "$KOS_BASE/environ.sh"
           export KOS_INC_PATHS_CPP=""
           make -C tests/ppc_interpreter_smoke clean all
@@ -163,7 +164,8 @@ jobs:
           KOS_BASE: ${{ github.workspace }}/kos
           VF3_RECOMP_DIR: ${{ github.workspace }}/vf3-recomp
         run: |
-          set -euo pipefail
+          # KOS's environment scripts reference optional variables that may be unset.
+          set -eo pipefail
           export KOS_SUBARCH=naomi
           . "$KOS_BASE/environ.sh"
           export KOS_INC_PATHS_CPP=""
