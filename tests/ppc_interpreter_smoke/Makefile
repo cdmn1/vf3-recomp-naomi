@@ -25,6 +25,13 @@ CPPFLAGS += -I$(SOFTFLOAT_DIR)/source/include -I$(SOFTFLOAT_DIR)/source/8086-SSE
 all: $(TARGET)
 rom: $(ROM)
 
+# Compile the real upstream Model 3 board core for SH-4 without linking or
+# allocating its large emulated memory regions. This isolates target portability.
+model3-compile: model3.o
+
+model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -I$(VF3_RECOMP_DIR)/src/machine -c $< -o $@
+
 ppc.o: $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp $(VF3_RECOMP_DIR)/src/ppc/ppc.h patch_ppc_softfloat.py
 	python3 patch_ppc_softfloat.py $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
@@ -41,6 +48,6 @@ $(ROM): $(TARGET) $(NAOMIBINTOOL)
 include $(KOS_BASE)/Makefile.rules
 
 clean:
-	-rm -f $(TARGET) $(ROM) $(OBJS)
+	-rm -f $(TARGET) $(ROM) $(OBJS) model3.o
 
-.PHONY: all rom clean
+.PHONY: all rom model3-compile clean
