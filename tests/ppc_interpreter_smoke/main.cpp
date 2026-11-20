@@ -318,8 +318,8 @@ static bool run_basic_fpu_rounding_test() {
                 cpu.reset();
                 cpu.s.fpscr = mode;
                 cpu.s.f[2].d = product;
-                cpu.s.f[3].d = 1.0;
-                cpu.s.f[4].d = addend;
+                cpu.s.f[3].d = addend;
+                cpu.s.f[4].d = 1.0;
                 cpu.s.pc = cpu.s.npc = 0;
                 program[0] = double_ops[op];
                 if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != expected_bits) return false;
@@ -328,8 +328,8 @@ static bool run_basic_fpu_rounding_test() {
                 cpu.reset();
                 cpu.s.fpscr = mode;
                 cpu.s.f[2].d = product;
-                cpu.s.f[3].d = 1.0;
-                cpu.s.f[4].d = single_addend;
+                cpu.s.f[3].d = single_addend;
+                cpu.s.f[4].d = 1.0;
                 cpu.s.pc = cpu.s.npc = 0;
                 program[0] = single_ops[op];
                 const uint32_t expected_single_bits = expected_value_sign < 0 ? fma_negative_halfway[mode] : fma_positive_halfway[mode];
