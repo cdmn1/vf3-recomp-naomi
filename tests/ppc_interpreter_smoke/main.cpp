@@ -203,7 +203,8 @@ static bool run_basic_fpu_rounding_test() {
     // A-form/X-form floating-point instruction encodings.
     const uint32_t fadd  = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (21u << 1);
     const uint32_t fsub  = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (20u << 1);
-    const uint32_t fmul  = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (25u << 1);
+    // fmul is an A-form instruction: its third source is FRC (bits 6..10), not FRB.
+    const uint32_t fmul  = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 6) | (25u << 1);
     const uint32_t fsqrt = (63u << 26) | (1u << 21) | (2u << 11) | (22u << 1);
     const uint32_t fctiw = (63u << 26) | (1u << 21) | (2u << 11) | (14u << 1);
     const uint32_t fctiwz= (63u << 26) | (1u << 21) | (2u << 11) | (15u << 1);
