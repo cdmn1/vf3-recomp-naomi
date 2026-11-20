@@ -11,7 +11,9 @@
 #include <cstring>
 
 #include "ppc.h"
+extern "C" {
 #include <softfloat.h>
+}
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
