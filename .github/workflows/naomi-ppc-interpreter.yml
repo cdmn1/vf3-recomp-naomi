@@ -165,8 +165,8 @@ jobs:
           cp ../Linux-ARM-VFPv2-GCC/platform.h platform.h
           make clean
           make \
-            COMPILE_C="$KOS_CC_BASE/bin/sh-elf-gcc -c -Werror-implicit-function-declaration -DSOFTFLOAT_FAST_INT64 -DINLINE_LEVEL=5 -DSOFTFLOAT_FAST_DIV32TO16 -DSOFTFLOAT_FAST_DIV64TO32 -I. -I../../source/8086-SSE -I../../source/include -O2 -m4-single -fno-PIC -fno-PIE -o \\$@" \
-            MAKELIB="$KOS_CC_BASE/bin/sh-elf-ar crs \\$@"
+            COMPILE_C="$KOS_CC_BASE/bin/sh-elf-gcc -c -Werror-implicit-function-declaration -DSOFTFLOAT_FAST_INT64 -DINLINE_LEVEL=5 -DSOFTFLOAT_FAST_DIV32TO16 -DSOFTFLOAT_FAST_DIV64TO32 -I. -I../../source/8086-SSE -I../../source/include -O2 -m4-single -fno-PIC -fno-PIE -o \$@" \
+            MAKELIB="$KOS_CC_BASE/bin/sh-elf-ar crs \$@"
           test -s softfloat.a
           file softfloat.a
 
