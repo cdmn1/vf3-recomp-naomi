@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "tests/ppc_interpreter_smoke/**"
+      - "tests/naomi_fpu_probe/**"
       - "VERSION"
       - ".github/workflows/naomi-ppc-interpreter.yml"
   workflow_dispatch:
@@ -159,6 +160,17 @@ jobs:
           make -C tests/ppc_interpreter_smoke clean all
           test -s tests/ppc_interpreter_smoke/vf3_ppc_interpreter_smoke.elf
 
+      - name: Compile SH-4 FPU rounding probe
+        env:
+          KOS_BASE: ${{ github.workspace }}/kos
+        run: |
+          set -eo pipefail
+          export KOS_SUBARCH=naomi
+          . "$KOS_BASE/environ.sh"
+          export KOS_INC_PATHS_CPP=""
+          make -C tests/naomi_fpu_probe clean all
+          test -s tests/naomi_fpu_probe/naomi_sh4_fpu_probe.elf
+
       - name: Package Naomi test ROM
         env:
           KOS_BASE: ${{ github.workspace }}/kos
@@ -174,6 +186,10 @@ jobs:
           test -s "tests/ppc_interpreter_smoke/$ROM"
           mkdir -p build-artifacts
           cp "tests/ppc_interpreter_smoke/$ROM" build-artifacts/
+          FPU_ROM="naomi_sh4_fpu_probe-v${GITHUB_RUN_NUMBER}.bin"
+          BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/naomi_fpu_probe rom
+          test -s "tests/naomi_fpu_probe/$FPU_ROM"
+          cp "tests/naomi_fpu_probe/$FPU_ROM" build-artifacts/
 
       - name: Validate and describe ROM
         run: |
@@ -194,7 +210,26 @@ jobs:
           SHA-256: ${SHA}
           Commercial game data: not included
           EOF
+          FPU_ROM="naomi_sh4_fpu_probe-v${GITHUB_RUN_NUMBER}.bin"
+          FPU_SIZE="$(stat -c '%s' "build-artifacts/$FPU_ROM")"
+          FPU_SHA="$(sha256sum "build-artifacts/$FPU_ROM" | awk '{print $1}')"
+          test "$FPU_SIZE" -gt 0
+          cat > build-artifacts/FPU_PROBE_INFO.txt <<EOF
+          Target: Naomi SH-4 FPU rounding probe
+          Project commit: ${GITHUB_SHA}
+          GitHub Actions run: ${GITHUB_RUN_ID}
+          Build version: v${GITHUB_RUN_NUMBER}
+          ROM: ${FPU_ROM}
+          Size: ${FPU_SIZE}
+          SHA-256: ${FPU_SHA}
+          Commercial game data: not included
+          EOF
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Naomi SH-4 FPU rounding probe
+          - ROM: ${FPU_ROM}
+          - Size: ${FPU_SIZE} bytes
+          - SHA-256: ${FPU_SHA}
+
           ## Naomi PPC interpreter smoke ROM
           - Version: v${GITHUB_RUN_NUMBER}
           - ROM: ${ROM}
