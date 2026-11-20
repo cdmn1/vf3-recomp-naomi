@@ -77,3 +77,23 @@ The existing Daytona Naomi work establishes useful Naomi boot, BIOS-helper, and 
 6. Only then attempt a full Model 3 board link and frame test.
 
 No ROMs or commercial game assets belong in this repository.
+
+
+## 6. First physical Naomi PIO result (v55)
+
+The read-only v55 probe ran on real Naomi hardware. Reads at offsets 0x00000000, 0x00000100, and 0x00010000 returned stable, repeatable words. Reads at 0x00100000 returned 0xFFFF for all four words, also repeatably. The FPU probe and PPC interpreter smoke test passed on the same v55 test session.
+
+The v55 PIO screen labelled each read as "READ OK", but that label was unconditional: the PIO interface does not return a read-status bit. The only measured property was repeatability. The 0xFFFF result at 1 MiB is consistent with reading beyond the end of the small probe ROM and does not establish a NetDIMM address-space limit.
+
+### v56 follow-up: known markers in a 4 MiB image
+
+The next probe build keeps the executable segment and Naomi header intact, then extends the ROM image to exactly 4 MiB with three 8-byte markers outside the executable segment:
+
+| File offset | Expected bytes |
+|---|---|
+| 0x00100000 | `VF3PIO1!` |
+| 0x00200000 | `VF3PIO2!` |
+| 0x00300000 | `VF3PIO3!` |
+| 0x00400000 | End of image; expected PIO value is 0xFFFF |
+
+The on-screen probe compares the returned words against these known markers, checks repeated-read stability, and labels the end-of-image read separately. A successful marker read demonstrates that PIO can access appended NetDIMM image data at that offset; it is stronger evidence than repeatability alone. This still does not establish the full 64/128 MiB ranges needed by VROM and banked CROM, which require a later large-image test.
