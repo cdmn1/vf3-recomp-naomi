@@ -6,6 +6,7 @@ on:
     paths:
       - "tests/ppc_interpreter_smoke/**"
       - "tests/naomi_fpu_probe/**"
+      - "tests/naomi_cart_probe/**"
       - "VERSION"
       - ".github/workflows/naomi-ppc-interpreter.yml"
   workflow_dispatch:
@@ -196,6 +197,17 @@ jobs:
           make -C tests/ppc_interpreter_smoke model3-compile
           test -s tests/ppc_interpreter_smoke/model3.o
 
+      - name: Compile Naomi cartridge PIO read probe
+        env:
+          KOS_BASE: ${{ github.workspace }}/kos
+        run: |
+          set -eo pipefail
+          export KOS_SUBARCH=naomi
+          . "$KOS_BASE/environ.sh"
+          export KOS_INC_PATHS_CPP=""
+          make -C tests/naomi_cart_probe clean all
+          test -s tests/naomi_cart_probe/naomi_cart_read_probe.elf
+
       - name: Compile SH-4 FPU rounding probe
         if: always()
         env:
@@ -227,6 +239,10 @@ jobs:
           BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/naomi_fpu_probe rom
           test -s "tests/naomi_fpu_probe/$FPU_ROM"
           cp "tests/naomi_fpu_probe/$FPU_ROM" build-artifacts/
+          CART_ROM="naomi_cart_read_probe-v${GITHUB_RUN_NUMBER}.bin"
+          BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/naomi_cart_probe rom
+          test -s "tests/naomi_cart_probe/$CART_ROM"
+          cp "tests/naomi_cart_probe/$CART_ROM" build-artifacts/
 
       - name: Package SH-4 FPU probe independently
         if: always()
