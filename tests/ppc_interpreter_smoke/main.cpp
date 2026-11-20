@@ -173,7 +173,109 @@ static bool run_interpreter_rounding_test() {
                 return false;
         }
     }
-    return run_store_single_rounding_test();
+    return run_store_single_rounding_test() && run_basic_fpu_rounding_test();
+}
+
+static bool run_basic_fpu_rounding_test() {
+    static const uint64_t add_positive[4] = {
+        0x3ff0000000000000ull, 0x3ff0000000000000ull,
+        0x3ff0000000000001ull, 0x3ff0000000000000ull
+    };
+    static const uint64_t add_negative[4] = {
+        0xbff0000000000000ull, 0xbff0000000000000ull,
+        0xbff0000000000000ull, 0xbff0000000000001ull
+    };
+    static const uint64_t sqrt_two[4] = {
+        0x3ff6a09e667f3bcdull, 0x3ff6a09e667f3bccull,
+        0x3ff6a09e667f3bceull, 0x3ff6a09e667f3bcdull
+    };
+    static const uint32_t integer_nearest_modes[4] = { 2, 1, 2, 1 };
+
+    std::memset(guest_ram, 0, sizeof(guest_ram));
+    DummyBus bus;
+    ppc::Cpu cpu;
+    cpu.attach(&bus, guest_ram, dummy_crom);
+    cpu.configure(0, 2, 66000000, 0);
+    uint32_t *program = reinterpret_cast<uint32_t *>(guest_ram);
+
+    // A-form/X-form floating-point instruction encodings.
+    const uint32_t fadd  = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (21u << 1);
+    const uint32_t fsub  = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (20u << 1);
+    const uint32_t fmul  = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (25u << 1);
+    const uint32_t fsqrt = (63u << 26) | (1u << 21) | (2u << 11) | (22u << 1);
+    const uint32_t fctiw = (63u << 26) | (1u << 21) | (2u << 11) | (14u << 1);
+    const uint32_t fctiwz= (63u << 26) | (1u << 21) | (2u << 11) | (15u << 1);
+
+    for (unsigned mode = 0; mode < 4; ++mode) {
+        // 1 + 2^-53 is exactly halfway; directed rounding exposes the mode.
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 1.0;
+        cpu.s.f[3].d = 0x1p-53;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fadd;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != add_positive[mode])
+            return false;
+
+        // -1 + -2^-53 exercises the opposite sign/direction.
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = -1.0;
+        cpu.s.f[3].d = -0x1p-53;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fadd;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != add_negative[mode])
+            return false;
+
+        // sqrt(2) has distinct directed-rounding results.
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 2.0;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fsqrt;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != sqrt_two[mode])
+            return false;
+
+        // fctiw follows FPSCR; fctiwz always truncates toward zero.
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 1.5;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fctiw;
+        if (cpu.execute(1) != 1 || cpu.s.fatal ||
+            uint32_t(cpu.s.f[1].i) != integer_nearest_modes[mode])
+            return false;
+
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 1.5;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fctiwz;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || uint32_t(cpu.s.f[1].i) != 1)
+            return false;
+    }
+
+    // fsubs and fmuls are also exercised under all four modes with exact inputs.
+    for (unsigned mode = 0; mode < 4; ++mode) {
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 3.0;
+        cpu.s.f[3].d = 1.0;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fsub;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].d != 2.0)
+            return false;
+
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 1.5;
+        cpu.s.f[3].d = 2.0;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fmul;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].d != 3.0)
+            return false;
+    }
+    return true;
 }
 
 static bool run_interpreter_test() {
