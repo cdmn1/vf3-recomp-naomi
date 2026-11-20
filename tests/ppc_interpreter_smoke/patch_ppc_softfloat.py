@@ -91,8 +91,7 @@ replace_once('''static inline int64_t to_i64(double d)
 \t\treturn INT64_MIN;
 \treturn int64_t(d);
 }''',
-'''static inline int64_t to_i64(double d, uint32_t mode)
-{
+'''static inline float64_t sf64(double d);\n\nstatic inline int64_t to_i64(double d, uint32_t mode)\n{
     return int64_t(f64_to_i64(sf64(d), PPC_SOFTFLOAT_ROUNDING[mode & 3], false));
 }''', 'SoftFloat integer conversion')
 
