@@ -11,6 +11,7 @@
 #include <cstring>
 
 #include "ppc.h"
+#include <softfloat.h>
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
@@ -28,6 +29,47 @@ public:
     void write32(uint32_t, uint32_t) override {}
     void write64(uint32_t, uint64_t) override {}
 };
+
+static bool run_softfloat_rounding_test() {
+    static const uint64_t expected_positive[4] = {
+        0x3fb999999999999aull, 0x3fb9999999999999ull,
+        0x3fb999999999999aull, 0x3fb9999999999999ull
+    };
+    static const uint64_t expected_negative[4] = {
+        0xbfb999999999999aull, 0xbfb9999999999999ull,
+        0xbfb9999999999999ull, 0xbfb999999999999aull
+    };
+    static const uint32_t expected_positive_f32[4] = {
+        0x3dcccccd, 0x3dcccccc, 0x3dcccccd, 0x3dcccccc
+    };
+    static const uint32_t expected_negative_f32[4] = {
+        0xbdcccccd, 0xbdcccccc, 0xbdcccccc, 0xbdcccccd
+    };
+    static const uint_fast8_t modes[4] = {
+        softfloat_round_near_even, softfloat_round_minMag,
+        softfloat_round_max, softfloat_round_min
+    };
+
+    const float64_t one = ui32_to_f64(1);
+    const float64_t ten = ui32_to_f64(10);
+    for (unsigned mode = 0; mode < 4; ++mode) {
+        softfloat_roundingMode = modes[mode];
+        softfloat_exceptionFlags = 0;
+        const float64_t positive = f64_div(one, ten);
+        const float64_t negative = f64_div((float64_t){ .v = one.v | 0x8000000000000000ull }, ten);
+        const float32_t positive_single = f64_to_f32(positive);
+        const float32_t negative_single = f64_to_f32(negative);
+        if (positive.v != expected_positive[mode] ||
+            negative.v != expected_negative[mode] ||
+            uint32_t(positive_single.v) != expected_positive_f32[mode] ||
+            uint32_t(negative_single.v) != expected_negative_f32[mode]) {
+            softfloat_roundingMode = softfloat_round_near_even;
+            return false;
+        }
+    }
+    softfloat_roundingMode = softfloat_round_near_even;
+    return true;
+}
 
 static bool run_interpreter_test() {
     std::memset(guest_ram, 0, sizeof(guest_ram));
@@ -119,7 +161,7 @@ static void draw_text(float x, float y, const char *s) {
     }
 }
 
-static void draw_screen(bool passed) {
+static void draw_screen(bool passed, bool softfloat_passed) {
     pvr_wait_ready();
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_TR_POLY);
@@ -127,12 +169,14 @@ static void draw_screen(bool passed) {
     draw_text(40.0f, 112.0f, "UPSTREAM PPC INTERPRETER");
     draw_text(40.0f, 160.0f, passed ? "SH-4 EXECUTION: PASS" : "SH-4 EXECUTION: FAIL");
     draw_text(40.0f, 224.0f, "SYNTHETIC 3-INSTRUCTION TEST");
+    draw_text(40.0f, 272.0f, softfloat_passed ? "SOFTFLOAT 4-MODE TEST: PASS" : "SOFTFLOAT 4-MODE TEST: FAIL");
     pvr_list_finish();
     pvr_scene_finish();
 }
 
 int main() {
     const bool passed = run_interpreter_test();
+    const bool softfloat_passed = run_softfloat_rounding_test();
     printf("VF3 Recomp PPC interpreter smoke test: %s\n", passed ? "PASS" : "FAIL");
 
     pvr_init_defaults();
@@ -146,7 +190,7 @@ int main() {
     font_init();
 
     for(;;) {
-        draw_screen(passed);
+        draw_screen(passed, softfloat_passed);
         thd_sleep(16);
     }
     return 0;
