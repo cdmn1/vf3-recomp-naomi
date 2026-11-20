@@ -150,11 +150,15 @@ for old, new in [
      "{ NegatedRounding n; F(t).d = neg(sse(sf_sub(p, B), p, B)); }"),
     ("F(t).d = neg(sse(sf_add(p, B), p, B));",
      "{ NegatedRounding n; F(t).d = neg(sse(sf_add(p, B), p, B)); }"),
+    ("F(t).d = to_single(neg(sse(sf_sub(p, B), p, B)));",
+     "{ NegatedRounding n; F(t).d = to_single(neg(sse(sf_sub(p, B), p, B))); }"),
+    ("F(t).d = to_single(neg(sse(sf_add(p, B), p, B)));",
+     "{ NegatedRounding n; F(t).d = to_single(neg(sse(sf_add(p, B), p, B))); }"),
 ]:
     count = source.count(old)
-    if count != 2:
-        raise SystemExit(f"negated multiply-add rounding: expected 2 matches for {old}, found {count}")
-    source = source.replace(old, new)
+    if count != 1:
+        raise SystemExit(f"negated multiply-add rounding: expected 1 match for {old}, found {count}")
+    source = source.replace(old, new, 1)
 
 # Replace the conversion block without relying on whitespace-sensitive sub-blocks.
 old = '''\t\tuint32_t mode = x == 15 ? 1 : s.fpscr & 3;
