@@ -119,6 +119,8 @@ static bool run_store_single_rounding_test() {
     return true;
 }
 
+static bool run_basic_fpu_rounding_test();
+
 static bool run_interpreter_rounding_test() {
     static const uint64_t expected_double[2][4] = {
         { 0x3fb999999999999aull, 0x3fb9999999999999ull,
