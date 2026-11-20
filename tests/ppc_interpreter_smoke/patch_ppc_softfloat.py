@@ -146,7 +146,17 @@ replace_once('''case 12: { vxsnan(s, F(b)); F(t).d = to_single(B); } set_fprf(s,
 '''case 12: { vxsnan(s, F(b)); Rounding m(s.fpscr); F(t).d = to_single(B); } set_fprf(s, F(t)); if (rcbit(op)) set_cr1(s); return;  // frsp''',
 'frsp rounding mode')
 
-replace_once('f.f = float(F(t).d);', 'f.f = float(to_single(F(t).d));', 'stfs rounding')
+replace_once('''\t\tF32 f;
+\t\tf.f = float(F(rd(op)).d);''',
+'''\t\tF32 f;
+\t\t{ Rounding m(s.fpscr); f.f = float(to_single(F(rd(op)).d)); }''',
+'stfs rounding')
+
+replace_once('''\t\tF32 f;
+\t\tf.f = float(F(t).d);''',
+'''\t\tF32 f;
+\t\t{ Rounding m(s.fpscr); f.f = float(to_single(F(t).d)); }''',
+'stfsx rounding')
 
 path.write_text(source)
 print(f"Patched {path}")
