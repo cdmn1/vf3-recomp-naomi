@@ -14,7 +14,7 @@
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
-static alignas(4) uint8_t guest_ram[0x800000];
+alignas(4) static uint8_t guest_ram[0x800000];
 static const uint8_t dummy_crom[4] = {0, 0, 0, 0};
 
 class DummyBus final : public ppc::Bus {
