@@ -76,6 +76,11 @@ static bool run_softfloat_rounding_test() {
 }
 
 static unsigned ppc_failure_line = 0;
+static unsigned ppc_failure_mode = 0;
+static unsigned ppc_failure_op = 0;
+static unsigned ppc_failure_sign = 0;
+static uint64_t ppc_failure_actual = 0;
+static uint64_t ppc_failure_expected = 0;
 
 static bool run_store_single_rounding_test() {
     static const uint32_t expected[2][4] = {
@@ -324,7 +329,15 @@ static bool run_basic_fpu_rounding_test() {
                 cpu.s.f[4].d = 1.0;
                 cpu.s.pc = cpu.s.npc = 0;
                 program[0] = double_ops[op];
-                if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != expected_bits) { ppc_failure_line = __LINE__; return false; }
+                if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != expected_bits) {
+                    ppc_failure_line = __LINE__;
+                    ppc_failure_mode = mode;
+                    ppc_failure_op = op;
+                    ppc_failure_sign = sign;
+                    ppc_failure_actual = cpu.s.f[1].i;
+                    ppc_failure_expected = expected_bits;
+                    return false;
+                }
 
                 const double single_addend = (sign ^ subtract_form) ? -0x1p-24 : 0x1p-24;
                 cpu.reset();
@@ -558,7 +571,15 @@ static void draw_screen(bool passed, bool softfloat_passed, bool ppc_rounding_pa
     draw_text(40.0f, 224.0f, "SYNTHETIC 3-INSTRUCTION TEST");
     draw_text(40.0f, 272.0f, softfloat_passed ? "SOFTFLOAT 4-MODE TEST: PASS" : "SOFTFLOAT 4-MODE TEST: FAIL");
     draw_text(40.0f, 320.0f, ppc_rounding_passed ? "PPC FPU 4-MODE TEST: PASS" : "PPC FPU 4-MODE TEST: FAIL");
-    if (!ppc_rounding_passed) { char detail[48]; snprintf(detail, sizeof(detail), "PPC FAIL LINE: %u", ppc_failure_line); draw_text(40.0f, 368.0f, detail); }
+    if (!ppc_rounding_passed) {
+        char detail[64];
+        snprintf(detail, sizeof(detail), "FAIL L%u M%u OP%u S%u", ppc_failure_line, ppc_failure_mode, ppc_failure_op, ppc_failure_sign);
+        draw_text(40.0f, 368.0f, detail);
+        snprintf(detail, sizeof(detail), "GOT %08x%08x", static_cast<unsigned>(ppc_failure_actual >> 32), static_cast<unsigned>(ppc_failure_actual));
+        draw_text(40.0f, 400.0f, detail);
+        snprintf(detail, sizeof(detail), "EXP %08x%08x", static_cast<unsigned>(ppc_failure_expected >> 32), static_cast<unsigned>(ppc_failure_expected));
+        draw_text(40.0f, 432.0f, detail);
+    }
     pvr_list_finish();
     pvr_scene_finish();
 }
