@@ -340,6 +340,43 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fmuls;
         if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) return false;
+
+        // Negative fmuls checks directed rounding in the opposite direction.
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = -(1.0 + 0x1p-24);
+        cpu.s.f[3].d = 1.0;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fmuls;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) return false;
+
+        // frsp rounds a binary64 FPR value directly to binary32 under FPSCR.RN.
+        const uint32_t frsp = (63u << 26) | (1u << 21) | (2u << 11) | (12u << 1);
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 1.0 + 0x1p-24;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = frsp;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) return false;
+
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = -(1.0 + 0x1p-24);
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = frsp;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) return false;
+
+        // fsqrts checks a non-exact square root rounded to binary32.
+        static const uint32_t sqrt_two_single[4] = {
+            0x3fb504f3, 0x3fb504f3, 0x3fb504f4, 0x3fb504f3
+        };
+        const uint32_t fsqrts = (59u << 26) | (1u << 21) | (2u << 11) | (22u << 1);
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 2.0;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fsqrts;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(sqrt_two_single[mode])) return false;
     }
     return true;
 }
