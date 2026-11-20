@@ -34,6 +34,14 @@ jobs:
         id: vf3-source-revision
         run: echo "sha=$(git -C vf3-recomp rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Check out Berkeley SoftFloat
+        uses: actions/checkout@v4
+        with:
+          repository: ucb-bar/berkeley-softfloat-3
+          ref: 07ebd29db0cfb55723a79fbbffe99103ef38e305
+          path: softfloat
+          fetch-depth: 1
+
       - name: Check out KallistiOS
         id: kos
         uses: actions/checkout@v4
@@ -145,6 +153,22 @@ jobs:
         with:
           path: .cache/kos-naomi-build.tar
           key: vf3-recomp-kos-naomi-${{ runner.os }}-${{ steps.kos-revision.outputs.sha }}-${{ hashFiles('.github/workflows/naomi-ppc-interpreter.yml') }}-v1
+
+      - name: Build Berkeley SoftFloat for Naomi SH-4
+        env:
+          KOS_CC_BASE: ${{ github.workspace }}/.toolchain/sh-elf
+        run: |
+          set -eo pipefail
+          cd softfloat/build/Linux-x86_64-GCC
+          # Use SoftFloat's ARM GCC platform definitions: little-endian GCC,
+          # 64-bit integer support, and no x86-only __int128 intrinsics.
+          cp ../Linux-ARM-VFPv2-GCC/platform.h platform.h
+          make clean
+          make \
+            COMPILE_C="$KOS_CC_BASE/bin/sh-elf-gcc -c -Werror-implicit-function-declaration -DSOFTFLOAT_FAST_INT64 -DINLINE_LEVEL=5 -DSOFTFLOAT_FAST_DIV32TO16 -DSOFTFLOAT_FAST_DIV64TO32 -I. -I../../source/8086-SSE -I../../source/include -O2 -m4-single -fno-PIC -fno-PIE -o \\$@" \
+            MAKELIB="$KOS_CC_BASE/bin/sh-elf-ar crs \\$@"
+          test -s softfloat.a
+          file softfloat.a
 
       - name: Compile upstream PPC interpreter for SH-4
         env:
