@@ -125,6 +125,7 @@ jobs:
           . "${KOS_BASE}/env/environ_base.sh"
           EOF
           export KOS_SUBARCH=naomi
+          export KOS_INC_PATHS=""
           . "$KOS_BASE/environ.sh"
           # Required by the proven Naomi KOS build setup.
           export KOS_INC_PATHS_CPP=""
@@ -151,6 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           export KOS_SUBARCH=naomi
+          export KOS_INC_PATHS=""
           . "$KOS_BASE/environ.sh"
           export KOS_INC_PATHS_CPP=""
           make -C tests/ppc_interpreter_smoke clean all
