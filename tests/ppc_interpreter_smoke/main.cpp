@@ -306,7 +306,7 @@ static bool run_basic_fpu_rounding_test() {
             const bool subtract_form = (op == 1 || op == 3);
             for (unsigned sign = 0; sign < 2; ++sign) {
                 const double product = sign ? -1.0 : 1.0;
-                const double addend = (sign ^ subtract_form) ? 0x1p-53 : -0x1p-53;
+                const double addend = (sign ^ subtract_form) ? -0x1p-53 : 0x1p-53;
                 const double expected_value_sign = (sign ^ negate_result) ? -1.0 : 1.0;
                 const uint64_t expected_bits = expected_value_sign < 0 ? add_negative[mode] : add_positive[mode];
                 cpu.reset();
@@ -318,7 +318,7 @@ static bool run_basic_fpu_rounding_test() {
                 program[0] = double_ops[op];
                 if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != expected_bits) return false;
 
-                const double single_addend = (sign ^ subtract_form) ? 0x1p-24 : -0x1p-24;
+                const double single_addend = (sign ^ subtract_form) ? -0x1p-24 : 0x1p-24;
                 cpu.reset();
                 cpu.s.fpscr = mode;
                 cpu.s.f[2].d = product;
