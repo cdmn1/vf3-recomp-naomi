@@ -38,3 +38,18 @@ GitHub Actions builds a versioned Naomi ROM. The ROM contains no commercial game
 - Never commit commercial ROMs, game executables or extracted commercial assets.
 - A successful compile is not a successful emulator or hardware test. Record Flycast and real Naomi validation separately.
 - Do not claim playable compatibility until it has actually been demonstrated.
+
+
+## PPC floating-point rounding
+
+The Naomi SH-4 build uses Berkeley SoftFloat Release 3e for the PPC interpreter's
+IEEE-754 arithmetic and conversions. This is necessary because the SH-4 hardware
+FPU does not provide the two directed rounding modes required by the PPC FPSCR.
+The Naomi smoke ROM checks all four modes in the interpreter, including double
+and single-precision division and single-precision stores. These tests are a
+targeted validation of the rounding integration, not proof that every PPC
+floating-point edge case or full VF3 execution is correct.
+
+Berkeley SoftFloat is pinned to revision
+`07ebd29db0cfb55723a79fbbffe99103ef38e305`. Its BSD-style licence is included
+in [licenses/berkeley-softfloat-3-COPYING.txt](licenses/berkeley-softfloat-3-COPYING.txt).
