@@ -75,6 +75,50 @@ static bool run_softfloat_rounding_test() {
     return true;
 }
 
+static bool run_store_single_rounding_test() {
+    static const uint32_t expected[2][4] = {
+        { 0x3dcccccd, 0x3dcccccc, 0x3dcccccd, 0x3dcccccc },
+        { 0xbdcccccd, 0xbdcccccc, 0xbdcccccc, 0xbdcccccd }
+    };
+    std::memset(guest_ram, 0, sizeof(guest_ram));
+    DummyBus bus;
+    ppc::Cpu cpu;
+    cpu.attach(&bus, guest_ram, dummy_crom);
+    cpu.configure(0, 2, 66000000, 0);
+
+    const uint32_t stfs = (52u << 26) | (1u << 21) | 0x100u;
+    const uint32_t stfsx = (31u << 26) | (1u << 21) | (2u << 16) |
+                           (3u << 11) | (663u << 1);
+    for (unsigned sign = 0; sign < 2; ++sign) {
+        for (unsigned mode = 0; mode < 4; ++mode) {
+            cpu.reset();
+            cpu.s.fpscr = mode;
+            cpu.s.f[1].d = sign ? -0.1 : 0.1;
+            cpu.s.pc = 0;
+            cpu.s.npc = 0;
+            reinterpret_cast<uint32_t *>(guest_ram)[0] = stfs;
+            if (cpu.execute(1) != 1 ||
+                *reinterpret_cast<uint32_t *>(guest_ram + 0x100) != expected[sign][mode] ||
+                cpu.s.fatal)
+                return false;
+
+            cpu.reset();
+            cpu.s.fpscr = mode;
+            cpu.s.r[2] = 0x100;
+            cpu.s.r[3] = 0;
+            cpu.s.f[1].d = sign ? -0.1 : 0.1;
+            cpu.s.pc = 0;
+            cpu.s.npc = 0;
+            reinterpret_cast<uint32_t *>(guest_ram)[0] = stfsx;
+            if (cpu.execute(1) != 1 ||
+                *reinterpret_cast<uint32_t *>(guest_ram + 0x100) != expected[sign][mode] ||
+                cpu.s.fatal)
+                return false;
+        }
+    }
+    return true;
+}
+
 static bool run_interpreter_rounding_test() {
     static const uint64_t expected_double[2][4] = {
         { 0x3fb999999999999aull, 0x3fb9999999999999ull,
@@ -129,7 +173,7 @@ static bool run_interpreter_rounding_test() {
                 return false;
         }
     }
-    return true;
+    return run_store_single_rounding_test();
 }
 
 static bool run_interpreter_test() {
