@@ -184,6 +184,18 @@ jobs:
           make -C tests/ppc_interpreter_smoke clean all
           test -s tests/ppc_interpreter_smoke/vf3_ppc_interpreter_smoke.elf
 
+      - name: Compile upstream Model 3 board core for Naomi SH-4
+        env:
+          KOS_BASE: ${{ github.workspace }}/kos
+          VF3_RECOMP_DIR: ${{ github.workspace }}/vf3-recomp
+        run: |
+          set -eo pipefail
+          export KOS_SUBARCH=naomi
+          . "$KOS_BASE/environ.sh"
+          export KOS_INC_PATHS_CPP=""
+          make -C tests/ppc_interpreter_smoke model3-compile
+          test -s tests/ppc_interpreter_smoke/model3.o
+
       - name: Compile SH-4 FPU rounding probe
         if: always()
         env:
