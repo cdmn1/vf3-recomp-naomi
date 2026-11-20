@@ -299,6 +299,12 @@ static bool run_basic_fpu_rounding_test() {
     const uint32_t fnmsubs = (59u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (4u << 6) | (30u << 1);
     const uint32_t double_ops[4] = { fmadd, fmsub, fnmadd, fnmsub };
     const uint32_t single_ops[4] = { fmadds, fmsubs, fnmadds, fnmsubs };
+    static const uint32_t fma_positive_halfway[4] = {
+        0x3f800000, 0x3f800000, 0x3f800001, 0x3f800000
+    };
+    static const uint32_t fma_negative_halfway[4] = {
+        0xbf800000, 0xbf800000, 0xbf800000, 0xbf800001
+    };
     for (unsigned mode = 0; mode < 4; ++mode) {
         for (unsigned op = 0; op < 4; ++op) {
             // Set FRA*FRC to +1 or -1; FRB supplies +/- one half-ULP.
@@ -326,7 +332,7 @@ static bool run_basic_fpu_rounding_test() {
                 cpu.s.f[4].d = single_addend;
                 cpu.s.pc = cpu.s.npc = 0;
                 program[0] = single_ops[op];
-                const uint32_t expected_single_bits = expected_value_sign < 0 ? negative_halfway[mode] : positive_halfway[mode];
+                const uint32_t expected_single_bits = expected_value_sign < 0 ? fma_negative_halfway[mode] : fma_positive_halfway[mode];
                 if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(expected_single_bits)) return false;
             }
         }
