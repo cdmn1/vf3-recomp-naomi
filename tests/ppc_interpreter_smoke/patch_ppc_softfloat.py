@@ -46,6 +46,19 @@ struct Rounding
         softfloat_roundingMode = PPC_SOFTFLOAT_ROUNDING[fpscr & 3];
     }
     ~Rounding() { softfloat_roundingMode = previous; }
+};
+
+// Negating a rounded result reverses directed-rounding direction. Keep the
+// upstream NaN-selection path, but invert only the final add/sub rounding.
+struct NegatedRounding
+{
+    uint_fast8_t previous;
+    NegatedRounding() : previous(softfloat_roundingMode)
+    {
+        if (previous == softfloat_round_max) softfloat_roundingMode = softfloat_round_min;
+        else if (previous == softfloat_round_min) softfloat_roundingMode = softfloat_round_max;
+    }
+    ~NegatedRounding() { softfloat_roundingMode = previous; }
 };''', 'Rounding guard')
 
 replace_once('''static inline double bits(uint64_t i) { Fpr f; f.i = i; return f.d; }
@@ -128,6 +141,19 @@ for old, new in replacements:
     count = source.count(old)
     if count == 0:
         raise SystemExit(f"floating-point operation not found: {old}")
+    source = source.replace(old, new)
+
+# fnmadd/fnmsub negate the final arithmetic result. For directed rounding,
+# the inner operation must use the opposite direction before the exact sign flip.
+for old, new in [
+    ("F(t).d = neg(sse(sf_sub(p, B), p, B));",
+     "{ NegatedRounding n; F(t).d = neg(sse(sf_sub(p, B), p, B)); }"),
+    ("F(t).d = neg(sse(sf_add(p, B), p, B));",
+     "{ NegatedRounding n; F(t).d = neg(sse(sf_add(p, B), p, B)); }"),
+]:
+    count = source.count(old)
+    if count != 2:
+        raise SystemExit(f"negated multiply-add rounding: expected 2 matches for {old}, found {count}")
     source = source.replace(old, new)
 
 # Replace the conversion block without relying on whitespace-sensitive sub-blocks.
