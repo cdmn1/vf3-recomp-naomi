@@ -286,6 +286,52 @@ static bool run_basic_fpu_rounding_test() {
         if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].d != 3.0)
             return false;
     }
+    // Multiply-add family: the reference model deliberately rounds the product
+    // and sum separately (not as a fused operation). Choose an exact product and
+    // a halfway addend so the final result distinguishes all FPSCR modes.
+    const uint32_t fmadd  = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (4u << 6) | (29u << 1);
+    const uint32_t fmsub  = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (4u << 6) | (28u << 1);
+    const uint32_t fnmadd = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (4u << 6) | (31u << 1);
+    const uint32_t fnmsub = (63u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (4u << 6) | (30u << 1);
+    const uint32_t fmadds  = (59u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (4u << 6) | (29u << 1);
+    const uint32_t fmsubs  = (59u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (4u << 6) | (28u << 1);
+    const uint32_t fnmadds = (59u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (4u << 6) | (31u << 1);
+    const uint32_t fnmsubs = (59u << 26) | (1u << 21) | (2u << 16) | (3u << 11) | (4u << 6) | (30u << 1);
+    const uint32_t double_ops[4] = { fmadd, fmsub, fnmadd, fnmsub };
+    const uint32_t single_ops[4] = { fmadds, fmsubs, fnmadds, fnmsubs };
+    for (unsigned mode = 0; mode < 4; ++mode) {
+        for (unsigned op = 0; op < 4; ++op) {
+            // Set FRA*FRC to +1 or -1; FRB supplies +/- one half-ULP.
+            const bool negate_result = op >= 2;
+            const bool subtract_form = (op == 1 || op == 3);
+            for (unsigned sign = 0; sign < 2; ++sign) {
+                const double product = sign ? -1.0 : 1.0;
+                const double addend = (sign ^ subtract_form) ? 0x1p-53 : -0x1p-53;
+                const double expected_value_sign = (sign ^ negate_result) ? -1.0 : 1.0;
+                const uint64_t expected_bits = expected_value_sign < 0 ? add_negative[mode] : add_positive[mode];
+                cpu.reset();
+                cpu.s.fpscr = mode;
+                cpu.s.f[2].d = product;
+                cpu.s.f[3].d = 1.0;
+                cpu.s.f[4].d = addend;
+                cpu.s.pc = cpu.s.npc = 0;
+                program[0] = double_ops[op];
+                if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != expected_bits) return false;
+
+                const double single_addend = (sign ^ subtract_form) ? 0x1p-24 : -0x1p-24;
+                cpu.reset();
+                cpu.s.fpscr = mode;
+                cpu.s.f[2].d = product;
+                cpu.s.f[3].d = 1.0;
+                cpu.s.f[4].d = single_addend;
+                cpu.s.pc = cpu.s.npc = 0;
+                program[0] = single_ops[op];
+                const uint32_t expected_single_bits = expected_value_sign < 0 ? negative_halfway[mode] : positive_halfway[mode];
+                if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(expected_single_bits)) return false;
+            }
+        }
+    }
+
     // Single-precision arithmetic rounds the operation result to binary32.
     // 1 + 2^-24 is exactly halfway between adjacent binary32 values.
     static const uint32_t positive_halfway[4] = {
@@ -349,6 +395,29 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fmuls;
         if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) return false;
+
+        // Reciprocal estimate opcode is exact in this upstream reference model;
+        // it returns a single-precision 1/x, so 1/3 exposes all four modes.
+        static const uint32_t reciprocal_positive[4] = {
+            0x3eaaaaab, 0x3eaaaaaa, 0x3eaaaaab, 0x3eaaaaaa
+        };
+        static const uint32_t reciprocal_negative[4] = {
+            0xbeaaaaab, 0xbeaaaaaa, 0xbeaaaaaa, 0xbeaaaaab
+        };
+        const uint32_t fres = (59u << 26) | (1u << 21) | (2u << 11) | (24u << 1);
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = 3.0;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fres;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(reciprocal_positive[mode])) return false;
+
+        cpu.reset();
+        cpu.s.fpscr = mode;
+        cpu.s.f[2].d = -3.0;
+        cpu.s.pc = cpu.s.npc = 0;
+        program[0] = fres;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(reciprocal_negative[mode])) return false;
 
         // frsp rounds a binary64 FPR value directly to binary32 under FPSCR.RN.
         const uint32_t frsp = (63u << 26) | (1u << 21) | (2u << 11) | (12u << 1);
