@@ -56,7 +56,9 @@ static bool run_softfloat_rounding_test() {
         softfloat_roundingMode = modes[mode];
         softfloat_exceptionFlags = 0;
         const float64_t positive = f64_div(one, ten);
-        const float64_t negative = f64_div((float64_t){ .v = one.v | 0x8000000000000000ull }, ten);
+        float64_t negative_one = one;
+        negative_one.v |= 0x8000000000000000ull;
+        const float64_t negative = f64_div(negative_one, ten);
         const float32_t positive_single = f64_to_f32(positive);
         const float32_t negative_single = f64_to_f32(negative);
         if (positive.v != expected_positive[mode] ||
