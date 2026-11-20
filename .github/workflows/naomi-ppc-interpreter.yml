@@ -244,7 +244,7 @@ jobs:
           test -s "tests/naomi_cart_probe/$CART_ROM"
           # Keep the Naomi executable segment unchanged, but extend the ROM
           # image with known bytes so PIO can be tested beyond the small ELF.
-          python3 - "$CART_ROM" <<'PY'
+          python3 - "tests/naomi_cart_probe/$CART_ROM" <<'PY'
           import pathlib, sys
           path = pathlib.Path(sys.argv[1])
           with path.open("r+b") as image:
