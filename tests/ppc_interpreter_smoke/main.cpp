@@ -178,6 +178,14 @@ static bool run_interpreter_rounding_test() {
     return run_store_single_rounding_test() && run_basic_fpu_rounding_test();
 }
 
+static uint64_t widened_float_bits(uint32_t bits) {
+    union FloatBits { float f; uint32_t i; } value;
+    value.i = bits;
+    ppc::Fpr widened;
+    widened.d = double(value.f);
+    return widened.i;
+}
+
 static bool run_basic_fpu_rounding_test() {
     static const uint64_t add_positive[4] = {
         0x3ff0000000000000ull, 0x3ff0000000000000ull,
@@ -297,15 +305,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = 0x1p-24;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fadds;
-        if (cpu.execute(1) != 1 || cpu.s.fatal ||
-            uint32_t(cpu.s.f[1].i) != (uint32_t(positive_halfway[mode]) << 32 | 0u)) {
-            // FPRs hold the binary32 result widened back to binary64; compare below.
-            union FloatBits { float f; uint32_t i; } expected;
-            expected.i = positive_halfway[mode];
-            ppc::Fpr widened;
-            widened.d = double(expected.f);
-            if (cpu.s.f[1].i != widened.i) return false;
-        }
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) return false;
 
         cpu.reset();
         cpu.s.fpscr = mode;
@@ -313,12 +313,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = -0x1p-24;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fadds;
-        if (cpu.execute(1) != 1 || cpu.s.fatal) return false;
-        union FloatBits { float f; uint32_t i; } expected_negative;
-        expected_negative.i = negative_halfway[mode];
-        ppc::Fpr widened_negative;
-        widened_negative.d = double(expected_negative.f);
-        if (cpu.s.f[1].i != widened_negative.i) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) return false;
 
         // fsubs: 1 - (-2^-24) and -1 - 2^-24 exercise both directions.
         cpu.reset();
@@ -327,12 +322,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = -0x1p-24;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fsubs;
-        if (cpu.execute(1) != 1 || cpu.s.fatal) return false;
-        union FloatBits { float f; uint32_t i; } expected_sub_positive;
-        expected_sub_positive.i = positive_halfway[mode];
-        ppc::Fpr widened_sub_positive;
-        widened_sub_positive.d = double(expected_sub_positive.f);
-        if (cpu.s.f[1].i != widened_sub_positive.i) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) return false;
 
         cpu.reset();
         cpu.s.fpscr = mode;
@@ -340,12 +330,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = 0x1p-24;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fsubs;
-        if (cpu.execute(1) != 1 || cpu.s.fatal) return false;
-        union FloatBits { float f; uint32_t i; } expected_sub_negative;
-        expected_sub_negative.i = negative_halfway[mode];
-        ppc::Fpr widened_sub_negative;
-        widened_sub_negative.d = double(expected_sub_negative.f);
-        if (cpu.s.f[1].i != widened_sub_negative.i) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(negative_halfway[mode])) return false;
 
         // fmuls: exact binary64 product is a binary32 halfway value.
         cpu.reset();
@@ -354,12 +339,7 @@ static bool run_basic_fpu_rounding_test() {
         cpu.s.f[3].d = 1.0;
         cpu.s.pc = cpu.s.npc = 0;
         program[0] = fmuls;
-        if (cpu.execute(1) != 1 || cpu.s.fatal) return false;
-        union FloatBits { float f; uint32_t i; } expected_mul;
-        expected_mul.i = positive_halfway[mode];
-        ppc::Fpr widened_mul;
-        widened_mul.d = double(expected_mul.f);
-        if (cpu.s.f[1].i != widened_mul.i) return false;
+        if (cpu.execute(1) != 1 || cpu.s.fatal || cpu.s.f[1].i != widened_float_bits(positive_halfway[mode])) return false;
     }
     return true;
 }
