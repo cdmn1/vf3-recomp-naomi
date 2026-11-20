@@ -10,6 +10,11 @@ endif
 ifeq ($(VF3_RECOMP_DIR),)
 $(error VF3_RECOMP_DIR is unset. Point it at the pinned vf3-recomp checkout)
 endif
+ifeq ($(SOFTFLOAT_DIR),)
+$(error SOFTFLOAT_DIR is unset. Point it at the pinned Berkeley SoftFloat checkout)
+endif
+
+SOFTFLOAT_BUILD = $(SOFTFLOAT_DIR)/build/Linux-x86_64-GCC
 
 TARGET = vf3_ppc_interpreter_smoke.elf
 ROM = vf3_ppc_interpreter_smoke-$(BUILD_VERSION).bin
@@ -18,6 +23,7 @@ NAOMIBINTOOL ?= $(KOS_BASE)/utils/naomibintool/naomibintool
 
 CXXFLAGS += -std=gnu++17 -O2
 CPPFLAGS += -I$(VF3_RECOMP_DIR)/src/ppc
+CPPFLAGS += -I$(SOFTFLOAT_DIR)/source/include -I$(SOFTFLOAT_DIR)/source/8086-SSE
 
 all: $(TARGET)
 rom: $(ROM)
@@ -25,8 +31,8 @@ rom: $(ROM)
 ppc.o: $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp $(VF3_RECOMP_DIR)/src/ppc/ppc.h
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(TARGET): $(OBJS)
-	kos-c++ -o $@ $(OBJS) -lm
+$(TARGET): $(OBJS) $(SOFTFLOAT_BUILD)/softfloat.a
+	kos-c++ -o $@ $(OBJS) $(SOFTFLOAT_BUILD)/softfloat.a -lm
 
 $(NAOMIBINTOOL):
 	$(MAKE) -C $(KOS_BASE)/utils/naomibintool CC=cc
