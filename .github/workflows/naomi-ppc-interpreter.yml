@@ -2,7 +2,7 @@ name: Naomi PPC interpreter smoke test
 
 on:
   push:
-    branches: [main]
+    branches: [main, softfloat-rounding-experiment]
     paths:
       - "tests/ppc_interpreter_smoke/**"
       - "tests/naomi_fpu_probe/**"
