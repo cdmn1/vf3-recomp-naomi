@@ -18,7 +18,7 @@ def replace_once(old: str, new: str, label: str) -> None:
         raise SystemExit(f"{label}: expected one match, found {count}")
     source = source.replace(old, new, 1)
 
-replace_once('#include <cfenv>\n', '#include <softfloat.h>\n', 'SoftFloat include')
+replace_once('#include <cfenv>\n', 'extern "C" {\n#include <softfloat.h>\n}\n', 'SoftFloat include')
 replace_once('#pragma STDC FENV_ACCESS ON\n', '', 'remove FENV pragma')
 replace_once('#pragma GCC optimize("trapping-math,rounding-math,fp-contract=off")',
              '#pragma GCC optimize("fp-contract=off")', 'GCC floating-point pragma')
