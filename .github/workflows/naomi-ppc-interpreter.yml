@@ -1,0 +1,208 @@
+name: Naomi PPC interpreter smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/ppc_interpreter_smoke/**"
+      - "VERSION"
+      - ".github/workflows/naomi-ppc-interpreter.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ppc-interpreter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check out VF3 Recomp Naomi
+        uses: actions/checkout@v4
+
+      - name: Check out pinned VF3 Recomp source
+        id: vf3-source
+        uses: actions/checkout@v4
+        with:
+          repository: mr-finster/vf3-recomp
+          ref: 8cb7cc5f5919c9cc33076b5c7bad3ab515654907
+          path: vf3-recomp
+          fetch-depth: 1
+
+      - name: Record upstream source revision
+        id: vf3-source-revision
+        run: echo "sha=$(git -C vf3-recomp rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out KallistiOS
+        id: kos
+        uses: actions/checkout@v4
+        with:
+          repository: KallistiOS/KallistiOS
+          ref: master
+          path: kos
+          fetch-depth: 1
+
+      - name: Record KOS source revision
+        id: kos-revision
+        run: echo "sha=$(git -C kos rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore compiled Naomi KOS cache
+        id: kos-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/kos-naomi-build.tar
+          key: vf3-recomp-kos-naomi-${{ runner.os }}-${{ steps.kos-revision.outputs.sha }}-${{ hashFiles('.github/workflows/naomi-ppc-interpreter.yml') }}-v1
+
+      - name: Overlay cached KOS source and build outputs
+        if: steps.kos-cache.outputs.cache-hit == 'true'
+        run: tar -xf .cache/kos-naomi-build.tar -C kos
+
+      - name: Install KOS build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential bison flex texinfo gettext \
+            libjpeg-dev libpng-dev libelf-dev \
+            libgmp-dev libmpfr-dev libmpc-dev libisl-dev \
+            zlib1g-dev libncurses-dev pkg-config \
+            git subversion python3 wget curl
+
+      - name: Restore SH-4 toolchain cache
+        id: sh-toolchain
+        uses: actions/cache/restore@v4
+        with:
+          path: .toolchain/sh-elf
+          key: vf3-recomp-sh-elf-gcc15-${{ runner.os }}-naomi-v1
+
+      - name: Build SH-4 toolchain if cache is empty
+        env:
+          KOS_BASE: ${{ github.workspace }}/kos
+          KOS_CC_BASE: ${{ github.workspace }}/.toolchain/sh-elf
+        run: |
+          mkdir -p "$KOS_CC_BASE"
+          if [ ! -x "$KOS_CC_BASE/bin/sh-elf-gcc" ]; then
+            cp "$KOS_BASE/utils/kos-chain/Makefile.dreamcast.cfg" \
+               "$KOS_BASE/utils/kos-chain/Makefile.cfg"
+            sed -i \
+              -e "s|^toolchain_path=.*|toolchain_path=$KOS_CC_BASE|" \
+              -e 's|^makejobs=.*|makejobs=4|' \
+              -e 's|^enable_objc=.*|enable_objc=0|' \
+              -e 's|^enable_objcpp=.*|enable_objcpp=0|' \
+              -e 's|^precision_modes=.*|precision_modes=m4-single|' \
+              "$KOS_BASE/utils/kos-chain/Makefile.cfg"
+            make -C "$KOS_BASE/utils/kos-chain"
+          fi
+
+      - name: Save SH-4 toolchain cache
+        if: steps.sh-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .toolchain/sh-elf
+          key: vf3-recomp-sh-elf-gcc15-${{ runner.os }}-naomi-v1
+
+      - name: Configure and build KOS for Naomi
+        env:
+          KOS_BASE: ${{ github.workspace }}/kos
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/kos-ports/include" \
+                   "$GITHUB_WORKSPACE/kos-ports/lib"
+          cat > "$KOS_BASE/environ.sh" <<'EOF'
+          export KOS_TOOLCHAIN="gcc"
+          export KOS_ARCH="dreamcast"
+          export KOS_SUBARCH="naomi"
+          export KOS_BASE="${GITHUB_WORKSPACE}/kos"
+          export KOS_PORTS="${GITHUB_WORKSPACE}/kos-ports"
+          export KOS_CC_BASE="${GITHUB_WORKSPACE}/.toolchain/sh-elf"
+          export KOS_CC_PREFIX="sh-elf"
+          export DC_ARM_BASE="${GITHUB_WORKSPACE}/.toolchain/arm-eabi"
+          export DC_ARM_PREFIX="arm-eabi"
+          export DC_TOOLS_BASE="${GITHUB_WORKSPACE}/.toolchain/bin"
+          export KOS_GENROMFS="${KOS_BASE}/utils/genromfs/genromfs"
+          export KOS_CMAKE_TOOLCHAIN="${KOS_BASE}/utils/cmake/kallistios.toolchain.cmake"
+          export KOS_MAKE="make"
+          export KOS_CFLAGS="-O2 -fno-PIC -fno-PIE -fomit-frame-pointer"
+          export KOS_SH4_PRECISION="-m4-single"
+          . "${KOS_BASE}/env/environ_base.sh"
+          EOF
+          export KOS_SUBARCH=naomi
+          . "$KOS_BASE/environ.sh"
+          # Required by the proven Naomi KOS build setup.
+          export KOS_INC_PATHS_CPP=""
+          make -C "$KOS_BASE" -j2
+
+      - name: Archive compiled Naomi KOS tree
+        if: steps.kos-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p .cache
+          tar --exclude=.git -cf .cache/kos-naomi-build.tar -C kos .
+
+      - name: Save compiled Naomi KOS cache
+        if: steps.kos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/kos-naomi-build.tar
+          key: vf3-recomp-kos-naomi-${{ runner.os }}-${{ steps.kos-revision.outputs.sha }}-${{ hashFiles('.github/workflows/naomi-ppc-interpreter.yml') }}-v1
+
+      - name: Compile upstream PPC interpreter for SH-4
+        env:
+          KOS_BASE: ${{ github.workspace }}/kos
+          VF3_RECOMP_DIR: ${{ github.workspace }}/vf3-recomp
+        run: |
+          set -euo pipefail
+          export KOS_SUBARCH=naomi
+          . "$KOS_BASE/environ.sh"
+          export KOS_INC_PATHS_CPP=""
+          make -C tests/ppc_interpreter_smoke clean all
+          test -s tests/ppc_interpreter_smoke/vf3_ppc_interpreter_smoke.elf
+
+      - name: Package Naomi test ROM
+        env:
+          KOS_BASE: ${{ github.workspace }}/kos
+          VF3_RECOMP_DIR: ${{ github.workspace }}/vf3-recomp
+        run: |
+          set -euo pipefail
+          export KOS_SUBARCH=naomi
+          . "$KOS_BASE/environ.sh"
+          export KOS_INC_PATHS_CPP=""
+          BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/ppc_interpreter_smoke rom
+          ROM="vf3_ppc_interpreter_smoke-v${GITHUB_RUN_NUMBER}.bin"
+          test -s "tests/ppc_interpreter_smoke/$ROM"
+          mkdir -p build-artifacts
+          cp "tests/ppc_interpreter_smoke/$ROM" build-artifacts/
+
+      - name: Validate and describe ROM
+        run: |
+          set -euo pipefail
+          ROM="vf3_ppc_interpreter_smoke-v${GITHUB_RUN_NUMBER}.bin"
+          SIZE="$(stat -c '%s' "build-artifacts/$ROM")"
+          SHA="$(sha256sum "build-artifacts/$ROM" | awk '{print $1}')"
+          test "$SIZE" -gt 0
+          cat > build-artifacts/BUILD_INFO.txt <<EOF
+          Target: VF3 Recomp upstream PPC interpreter smoke test
+          Project commit: ${GITHUB_SHA}
+          Upstream VF3 Recomp commit: ${{ steps.vf3-source-revision.outputs.sha }}
+          KallistiOS commit: ${{ steps.kos-revision.outputs.sha }}
+          GitHub Actions run: ${GITHUB_RUN_ID}
+          Build version: v${GITHUB_RUN_NUMBER}
+          ROM: ${ROM}
+          Size: ${SIZE}
+          SHA-256: ${SHA}
+          Commercial game data: not included
+          EOF
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Naomi PPC interpreter smoke ROM
+          - Version: v${GITHUB_RUN_NUMBER}
+          - ROM: ${ROM}
+          - Size: ${SIZE} bytes
+          - SHA-256: ${SHA}
+          - Upstream source: ${{ steps.vf3-source-revision.outputs.sha }}
+          - KOS revision: ${{ steps.kos-revision.outputs.sha }}
+          EOF
+
+      - name: Upload Naomi test ROM
+        uses: actions/upload-artifact@v4
+        with:
+          name: vf3-recomp-naomi-ppc-smoke-v${{ github.run_number }}
+          path: build-artifacts/*
+          if-no-files-found: error
