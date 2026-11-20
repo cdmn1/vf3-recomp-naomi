@@ -122,6 +122,22 @@ replace_once('''static inline double to_single(double d)
     F32 f;
     f.i = uint32_t(rounded.v);
     return double(f.f);
+}
+
+static inline double to_single_negated(double d)
+{
+    if (std::isnan(d))
+        return bits(ubits(to_single(d)) ^ 0x8000000000000000ull);
+    uint_fast8_t previous = softfloat_roundingMode;
+    uint_fast8_t reversed = previous;
+    if (previous == softfloat_round_max) reversed = softfloat_round_min;
+    else if (previous == softfloat_round_min) reversed = softfloat_round_max;
+    softfloat_roundingMode = reversed;
+    float32_t rounded = f64_to_f32(sf64(d));
+    softfloat_roundingMode = previous;
+    F32 f;
+    f.i = uint32_t(rounded.v);
+    return -double(f.f);
 }''', 'SoftFloat single conversion')
 
 # Replace every native arithmetic operation in the PPC floating-point instruction handlers.
@@ -151,9 +167,9 @@ for old, new in [
     ("F(t).d = neg(sse(sf_add(p, B), p, B));",
      "{ NegatedRounding n; F(t).d = neg(sse(sf_add(p, B), p, B)); }"),
     ("F(t).d = to_single(neg(sse(sf_sub(p, B), p, B)));",
-     "{ NegatedRounding n; F(t).d = to_single(neg(sse(sf_sub(p, B), p, B))); }"),
+     "F(t).d = to_single_negated(sse(sf_sub(p, B), p, B));"),
     ("F(t).d = to_single(neg(sse(sf_add(p, B), p, B)));",
-     "{ NegatedRounding n; F(t).d = to_single(neg(sse(sf_add(p, B), p, B))); }"),
+     "F(t).d = to_single_negated(sse(sf_add(p, B), p, B));"),
 ]:
     count = source.count(old)
     if count != 1:
