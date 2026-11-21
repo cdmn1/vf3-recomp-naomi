@@ -180,3 +180,27 @@ Consequences:
 - The 8 MiB Model 3 texture RAM is conceptually separate from the PVR2's own VRAM allocations. A hardware renderer may upload or cache texture regions in PVR2 VRAM, but the Model 3 source remains authoritative and must preserve its write/update semantics.
 - Naomi PVR2 VRAM should be treated as a separate, finite resource with explicit allocations for framebuffers, tile lists, textures, and command buffers. It is not additional SH-4 heap and cannot be double-counted as free capacity.
 - The first renderer milestone should be a low-memory, native-resolution PVR2 path with no CPU raster fallback and no retained desktop frame-history buffers. Widescreen, interpolation history, panoramas, and optional visual enhancements should be left out initially.
+
+## 12. Naomi cartridge reads: PIO versus Holly G1 DMA
+
+A closer register-level investigation distinguishes two different register groups that are easy to confuse:
+
+- The cartridge/ROM-board registers at `0xA05F7000`–`0xA05F7014` include the PIO offset/data interface and a separate DMA source-offset/count interface. In Flycast these are represented as `RomPioOffset`, `DmaOffset`, and `DmaCount`. The DMA offset/count registers do not themselves launch a transfer.
+- The actual transfer engine is Holly's G1/GD-ROM DMA block at `0xA05F7404`–`0xA05F7418`: destination address (`SB_GDSTAR`), length (`SB_GDLEN`), direction (`SB_GDDIR`), enable (`SB_GDEN`), and start/status (`SB_GDST`). Flycast's Naomi DMA handler obtains source blocks from the cartridge via `GetDmaPtr()`, copies them to SH-4 memory, advances the cartridge source pointer, and completes/raises the GD-ROM DMA interrupt.
+- The transfer length is specified in 32-byte units, and the G1 path is the hardware data mover. A Dreamcast architecture document quotes 14.4 MB/s as the documented GD-ROM-to-system-RAM rate; that is a reference ceiling/context, not a measured NetDIMM result.
+
+This makes Holly G1 DMA a promising alternative to reading every word through the 16-bit PIO data register. If the physical Naomi NetDIMM ROM board supports the same cartridge DMA source path (as the emulator models), it could transfer aligned blocks directly into a bounded SH-4 RAM buffer. That would suit both the 8 MiB CROM bank-window refill and sequential VROM chunks much better than per-word CPU PIO.
+
+### Important distinction and remaining proof
+
+The v59/v60 PIO probe does not test G1 DMA. Nor does the presence of the DMA registers prove that arbitrary NetDIMM offsets can be DMA-read on physical hardware. The emulator source establishes the register model and data flow, not the real board's timing, supported offsets, transfer limits, or NetDIMM-specific behavior.
+
+Before implementing a DMA-backed ROM source:
+
+1. Finish the pending v60 physical PIO test; this independently verifies the large-image offsets.
+2. Build a separate read-only DMA probe that sets a cartridge source offset, transfers a small aligned block into a reserved SH-4 RAM buffer, and displays the bytes/checksum on screen.
+3. Test a few known marker offsets first, then increase transfer size and measure throughput with the SH-4 timer.
+4. Keep the destination entirely inside a reserved main-RAM scratch buffer; do not target PVR/texture memory or overwrite the executable/stack.
+5. Verify transfer completion and error/timeout handling before using DMA in a runtime cache.
+
+Do not confuse the cartridge's source offset/count registers with the G1 DMA engine's destination/length/control registers. Do not use the DMA path in the game port until it has passed on real Naomi hardware.
