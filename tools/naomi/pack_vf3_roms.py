@@ -81,6 +81,12 @@ def load_verified_roms(zip_path: Path, profile: dict) -> dict[str, bytearray]:
                 exact = next((e for e in entries if e.CRC == expected_crc), None)
             if exact is None:
                 raise PackError(f"Missing ROM: {rom['name']} (CRC {expected_crc:08x})")
+            expected_size = int(rom["size"])
+            if exact.file_size != expected_size:
+                raise PackError(
+                    f"Wrong ZIP entry size for {exact.filename}: {exact.file_size} bytes, "
+                    f"expected {expected_size}"
+                )
             try:
                 data = archive.read(exact)
             except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
