@@ -10,7 +10,7 @@ endif
 
 TARGET = naomi_cart_read_probe.elf
 ROM = naomi_cart_read_probe-$(BUILD_VERSION).bin
-OBJS = main.o ../../platform/naomi/cart_dma.o ../../platform/naomi/cart_image.o ../../platform/naomi/cart_image_format.o
+OBJS = main.o ../../platform/naomi/cart_dma.o ../../platform/naomi/cart_image.o ../../platform/naomi/cart_image_format.o ../../platform/naomi/cart_rom.o
 NAOMIBINTOOL ?= $(KOS_BASE)/utils/naomibintool/naomibintool
 
 CFLAGS += -O2 -fno-fast-math
@@ -38,7 +38,10 @@ include $(KOS_BASE)/Makefile.rules
 ../../platform/naomi/cart_image_format.o: ../../platform/naomi/cart_image_format.c ../../platform/naomi/cart_image_format.h
 	kos-cc -O2 -c $< -o $@
 
+../../platform/naomi/cart_rom.o: ../../platform/naomi/cart_rom.c ../../platform/naomi/cart_rom.h ../../platform/naomi/cart_image.h
+	kos-cc -O2 -c $< -o $@
+
 clean:
-	-rm -f $(TARGET) $(ROM) main.o ../../platform/naomi/cart_dma.o ../../platform/naomi/cart_image.o ../../platform/naomi/cart_image_format.o
+	-rm -f $(TARGET) $(ROM) main.o ../../platform/naomi/cart_dma.o ../../platform/naomi/cart_image.o ../../platform/naomi/cart_image_format.o ../../platform/naomi/cart_rom.o
 
 .PHONY: all rom clean
