@@ -50,13 +50,20 @@ static uint16_t values[12][4];
 static uint16_t repeat_values[12][4];
 static int stable[12];
 static int marker_ok[12];
-static uint16_t dma_words[16] __attribute__((aligned(32)));
-static int dma_started;
-static int dma_completed;
-static int dma_marker_ok;
-static uint32_t dma_status;
-static uint32_t dma_count;
-static uint32_t dma_dest_end;
+#define DMA_MAX_BYTES 0x00100000u
+#define DMA_TEST_COUNT 6
+static uint16_t dma_buffer[DMA_MAX_BYTES / 2] __attribute__((aligned(32)));
+static const uint32_t dma_sizes[DMA_TEST_COUNT] = {
+    32u, 256u, 4096u, 65536u, 262144u, 1048576u
+};
+typedef struct {
+    int attempted;
+    int passed;
+    int timed_out;
+    uint32_t transferred;
+    uint64_t elapsed_ms;
+} dma_result_t;
+static dma_result_t dma_results[DMA_TEST_COUNT];
 
 static void font_init(void) {
     uint16_t *vram = (uint16_t *)font_texture;
@@ -101,65 +108,73 @@ static void read_words(uint32_t offset, uint16_t out[4]) {
 
 
 /*
- * Read one 32-byte marker block through Naomi's cartridge-to-RAM G1 DMA path.
- * The destination is a reserved SH-4 main-RAM buffer. This test is read-only
- * with respect to the NetDIMM image.
+ * Characterize cartridge-to-RAM G1 DMA using a deterministic 1 MiB payload
+ * at source offset 1 MiB. Every transfer is 32-byte aligned and checked
+ * word-for-word. The NetDIMM image is only read.
  */
+static uint16_t expected_dma_word(uint32_t index) {
+    if(index == 0) return 0x4656u;
+    if(index == 1) return 0x5033u;
+    if(index == 2) return 0x4f49u;
+    if(index == 3) return 0x2131u;
+    return (uint16_t)(0xA500u ^ ((index * 73u + (index >> 5)) & 0xFFFFu));
+}
+
 static void run_dma_probe(void) {
     const uint32_t source_offset = 0x00100000u;
-    const uint32_t transfer_size = 32u;
     const uint64_t timeout_ms = 5000u;
-    const uint64_t start_ms = timer_ms_gettime64();
 
-    for(int i = 0; i < 16; ++i)
-        dma_words[i] = 0xA5A5u;
+    for(int test = 0; test < DMA_TEST_COUNT; ++test) {
+        dma_result_t *result = &dma_results[test];
+        const uint32_t transfer_size = dma_sizes[test];
+        uint64_t start_ms;
 
-    /* Ensure no dirty/stale cache line can interfere with the DMA buffer. */
-    dcache_inval_range((uintptr_t)dma_words, transfer_size);
-
-    dma_status = G1_GDST;
-    if((G1_GDST & 1u) || (G1_GDEN & 1u)) {
-        dma_completed = 0;
-        dma_started = 0;
-        dma_count = G1_GDLEND;
-        dma_dest_end = G1_GDSTARD;
-        return;
-    }
-
-    /* Cartridge DMA source offset: 1 MiB, matching VF3PIO1! in this image. */
-    CART_DMA_OFFSETL = (uint16_t)(source_offset & 0xFFFFu);
-    CART_DMA_OFFSETH = (uint16_t)((source_offset >> 16) & 0x7FFFu);
-
-    /* G1 DMA destination is a root-bus address, not a cached SH-4 pointer. */
-    G1_GDSTAR = (uint32_t)((uintptr_t)dma_words & 0x1FFFFFE0u);
-    G1_GDLEN = transfer_size;
-    G1_GDDIR = 1u; /* cartridge/GD-ROM source -> SH-4 system memory */
-    G1_GDEN = 1u;
-    G1_GDST = 1u;
-    dma_started = 1;
-
-    while(G1_GDST & 1u) {
-        if(timer_ms_gettime64() - start_ms >= timeout_ms) {
-            G1_GDEN = 0u; /* abort rather than wait forever */
+        result->attempted = 1;
+        if((G1_GDST & 1u) || (G1_GDEN & 1u)) {
+            result->attempted = 0;
             break;
         }
-        thd_pass();
+
+        dcache_inval_range((uintptr_t)dma_buffer, transfer_size);
+        CART_DMA_OFFSETL = (uint16_t)(source_offset & 0xFFFFu);
+        CART_DMA_OFFSETH = (uint16_t)((source_offset >> 16) & 0x7FFFu);
+
+        G1_GDSTAR = (uint32_t)((uintptr_t)dma_buffer & 0x1FFFFFE0u);
+        G1_GDLEN = transfer_size;
+        G1_GDDIR = 1u;
+        G1_GDEN = 1u;
+        start_ms = timer_ms_gettime64();
+        G1_GDST = 1u;
+
+        while(G1_GDST & 1u) {
+            if(timer_ms_gettime64() - start_ms >= timeout_ms) {
+                result->timed_out = 1;
+                G1_GDEN = 0u;
+                break;
+            }
+            thd_pass();
+        }
+
+        result->elapsed_ms = timer_ms_gettime64() - start_ms;
+        result->transferred = G1_GDLEND;
+        dcache_inval_range((uintptr_t)dma_buffer, transfer_size);
+
+        result->passed = !result->timed_out &&
+                         ((G1_GDST & 1u) == 0u) &&
+                         (result->transferred == transfer_size);
+        if(result->passed) {
+            for(uint32_t i = 0; i < transfer_size / 2u; ++i) {
+                if(dma_buffer[i] != expected_dma_word(i)) {
+                    result->passed = 0;
+                    break;
+                }
+            }
+        }
+
+        G1_GDEN = 0u;
+        if(result->timed_out)
+            break;
     }
-
-    dma_status = G1_GDST;
-    dma_count = G1_GDLEND;
-    dma_dest_end = G1_GDSTARD;
-    dma_completed = ((dma_status & 1u) == 0u) && (dma_count >= transfer_size);
-
-    /* DMA wrote memory behind the CPU cache; discard any cached copy. */
-    dcache_inval_range((uintptr_t)dma_words, transfer_size);
-
-    dma_marker_ok = dma_completed;
-    for(int i = 0; i < 4; ++i)
-        if(dma_words[i] != expected_markers[0][i])
-            dma_marker_ok = 0;
-
-    G1_GDEN = 0u;
 }
 
 static void draw_screen(void) {
@@ -184,12 +199,16 @@ static void draw_screen(void) {
             stable[i] ? "MATCH" : "MISMATCH", check);
         draw_text(24, 130 + i * 24, line);
     }
-    snprintf(line, sizeof(line), "DMA 1MiB: %04x %04x %04x %04x",
-        dma_words[0], dma_words[1], dma_words[2], dma_words[3]);
+    snprintf(line, sizeof(line), "DMA 32:%s 256:%s 4K:%s 64K:%s",
+        dma_results[0].passed ? "OK" : "FAIL",
+        dma_results[1].passed ? "OK" : "FAIL",
+        dma_results[2].passed ? "OK" : "FAIL",
+        dma_results[3].passed ? "OK" : "FAIL");
     draw_text(24, 430, line);
-    snprintf(line, sizeof(line), "G1 DMA: %s  END=%08lx LEN=%lu",
-        dma_marker_ok ? "MARKER OK" : (dma_started ? "FAIL/TIMEOUT" : "NOT RUN"),
-        (unsigned long)dma_dest_end, (unsigned long)dma_count);
+    snprintf(line, sizeof(line), "DMA 256K:%s 1M:%s 1M:%llums",
+        dma_results[4].passed ? "OK" : "FAIL",
+        dma_results[5].passed ? "OK" : "FAIL",
+        (unsigned long long)dma_results[5].elapsed_ms);
     draw_text(24, 454, line);
     pvr_list_finish(); pvr_scene_finish();
 }

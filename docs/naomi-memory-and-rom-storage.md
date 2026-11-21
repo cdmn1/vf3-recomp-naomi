@@ -214,3 +214,21 @@ A dedicated read-only probe is justified, but it must be conservative:
 6. Only after the small transfer succeeds should the probe measure larger blocks or sequential throughput.
 
 Do not infer the meaning of the cartridge high-register flags from Flycast alone. Do not run an unbounded DMA or direct it at executable, stack, PVR, or texture memory. A physical pass is required before the runtime ROM cache can use this path.
+
+
+## 13. v62 physical Naomi result: PIO range and first G1 DMA pass
+
+The v62 image was tested on retail Naomi hardware with the user's NetDIMM setup:
+
+- PPC interpreter smoke test: all tests passed.
+- SH-4 FPU probe: nearest and toward-zero results matched expected IEEE-754 bits for exact and positive/negative inexact values.
+- Cartridge PIO: repeated reads matched at all tested offsets from 0 through 32 MiB, including markers at 1, 2, 3, 4, 8, 16, and 32 MiB. The 64 MiB boundary returned all 0xFFFF.
+- Cartridge-to-G1 DMA: a 32-byte transfer from source offset 1 MiB reached SH-4 RAM and matched the VF3PIO1 marker. The on-screen transferred count was 32 bytes.
+
+This is the first physical confirmation of the cartridge-to-G1 DMA path. It validates the tested register sequence for one 32-byte transfer on this hardware, not yet larger lengths, sustained throughput, arbitrary source offsets, or all NetDIMM variants.
+
+### v63 DMA characterization
+
+The next probe retains the PIO/PPC/FPU regression tests and adds independent G1 DMA transfers of 32 B, 256 B, 4 KiB, 64 KiB, 256 KiB, and 1 MiB. The first MiB after the 1 MiB source offset contains a deterministic word sequence; the probe compares every transferred 16-bit word, checks the reported transferred byte count, and uses a 5-second timeout per transfer. All tested sizes are multiples of the 32-byte alignment already required by the successful v62 transfer.
+
+This is a bounded size/throughput characterization, not a claim that 1 MiB DMA will work. If a transfer times out, subsequent sizes are skipped. PIO remains the fallback. Throughput can be calculated from the on-screen SH-4 timer measurements after the results are returned.

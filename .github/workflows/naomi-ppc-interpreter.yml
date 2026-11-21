@@ -255,6 +255,14 @@ jobs:
               ), 1):
                   image.seek(offset)
                   image.write(("VF3PIO%d!" % index).encode("ascii"))
+              # Deterministic 1 MiB source for word-for-word DMA validation.
+              payload = bytearray(0x00100000)
+              for word_index in range(len(payload) // 2):
+                  word = 0xA500 ^ ((word_index * 73 + (word_index >> 5)) & 0xFFFF)
+                  payload[word_index * 2:word_index * 2 + 2] = word.to_bytes(2, "big")
+              payload[:8] = b"VF3PIO1!"
+              image.seek(0x00100000)
+              image.write(payload)
           PY
           test "$(stat -c '%s' "tests/naomi_cart_probe/$CART_ROM")" -eq 67108864
           cp "tests/naomi_cart_probe/$CART_ROM" build-artifacts/
