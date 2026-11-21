@@ -28,6 +28,12 @@ Fixed CROM is assembled exactly as the pinned upstream loader does: the first 6 
 
 The sound program and sample ROMs are still validated against the profile but are not included in the image: the current Model 3 PPC board core sends MIDI bytes and does not consume those ROM regions.
 
+## Naomi runtime reader
+
+`platform/naomi/cart_image_format.c` parses and validates the VF3NROM v1 header without allocation. It checks the magic, version, fixed profile ID, header CRC, exact region sizes, 32-byte alignment, address-space bounds and region overlap. `platform/naomi/cart_image.c` mounts the header through the shared G1 DMA reader, provides bounded region reads, and can verify each complete region against its descriptor CRC using a caller-owned 64 KiB scratch buffer.
+
+The API deliberately requires aligned source offsets, lengths and destinations. That matches the packed image layout and allows the DMA reader to transfer directly into caller-owned RAM without an implicit large allocation. Small or unaligned PPC reads still need to be served by a resident CROM window or an explicit aligned staging block.
+
 ## Runtime integration status
 
-This establishes a deterministic ROM image format and host-side packer. The Naomi runtime does not yet parse this header or serve these regions to the Model 3 board core. The next integration work is a small header reader, fixed-CROM access strategy, banked-CROM window/cache, and VROM streaming into the texture FIFO. The packed image is therefore a build artifact format, not yet a playable VF3 image.
+The header parser and region reader are implemented and compile-tested as part of the Naomi cartridge probe. The parser has host-side tests for valid headers, corrupted header CRCs, overlapping regions and incorrect region sizes. The reader has not yet been exercised against a complete synthetic VF3NROM image in Flycast or on Naomi. The Model 3 board core does not yet use the reader: fixed-CROM loading/patching, synchronous 8 MiB bank-window refills, and VROM FIFO streaming remain to be integrated. The packed image is therefore not yet a playable VF3 image.
