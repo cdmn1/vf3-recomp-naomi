@@ -29,14 +29,14 @@ In `Model3::load()`, before any renderer or host application allocations:
 | Backup RAM | 128 KiB |
 | Security RAM | 128 KiB |
 | Tile RAM | 1.125 MiB |
-| Low culling RAM plus guard | 4.0625 MiB |
-| High culling RAM plus guard | 1.0625 MiB |
+| Low culling RAM plus guard | 4.25 MiB |
+| High culling RAM plus guard | 1.25 MiB |
 | Polygon RAM | 4 MiB |
 | Texture FIFO capacity | up to 1 MiB |
 | Texture RAM | 8 MiB |
-| **Total reserved/allocated** | **about 27.5 MiB** |
+| **Total reserved/allocated** | **about 27.875 MiB** |
 
-This is already close to Naomi's 32 MiB main-RAM budget. It excludes stack, executable, allocator overhead, renderer state, audio, and any host-side framebuffers. Reducing only the ROM vectors is therefore insufficient: the board's mutable working set also needs a Naomi-specific plan.
+This is already close to Naomi's 32 MiB main-RAM budget. The guard sizes are 0x10000 *words* each (256 KiB per culling RAM), not 0x10000 bytes; the corrected total is 27.875 MiB. It excludes stack, executable, allocator overhead, renderer state, audio, and any host-side framebuffers. Reducing only the ROM vectors is therefore insufficient: the board's mutable working set also needs a Naomi-specific plan.
 
 ## 3. ROM access patterns in the board core
 
@@ -134,3 +134,27 @@ The payload must preserve the exact byte/word ordering expected by the PPC bus h
 ### RAM budget implication
 
 With an 8 MiB fixed CROM and one 8 MiB bank window resident, ROM working memory would be approximately 16 MiB, before VROM scratch buffers. That is a substantial reduction from the current 216.5 MiB final ROM vectors, but it leaves only about 16 MiB of Naomi main RAM for the 27.5 MiB current mutable board allocations, executable, stack, renderer, and allocator. The mutable working set therefore remains a separate blocker; the ROM cache design alone does not make the full port fit in 32 MiB.
+
+
+## 10. Mutable-memory accounting refinement
+
+A second pass over the exact allocation expressions corrected the earlier culling guard arithmetic. `CULL_PAD` is `0x10000` 32-bit words, i.e. 256 KiB per culling RAM, not 64 KiB. The two culling allocations are therefore 4.25 MiB and 1.25 MiB. The combined baseline is 27.875 MiB, before the executable, stack, renderer, framebuffers, allocator metadata, and any extra texture copies. This makes the 32 MiB fit problem even tighter than the first estimate.
+
+The save-state page-generation arrays are comparatively tiny: one 32-bit generation entry per 4 KiB page across tile, culling, polygon, and texture RAM (roughly tens of KiB, not MiB). Removing save-state dirty tracking would not solve the memory problem.
+
+### What the source tells us about reduction candidates
+
+- **Texture RAM (8 MiB):** this is a full 2048×2048 16-bit emulated texture store. It is the largest single candidate for aliasing or relocation, but only if the Naomi renderer can use the same physical storage without clobbering the PVR's own render targets, tile lists, and texture allocations. It cannot be assumed to be free PVR memory. A renderer-specific texture residency/cache design may be safer than a direct alias.
+- **Polygon RAM (4 MiB):** the PPC-visible Real3D address space writes directly into this array, and the renderer consumes its contents at flush. It may be possible to allocate only the portions actually touched, but the current indexed vector and address masking assume a contiguous zero-filled 4 MiB region. A sparse-page backing would need to preserve zero reads, write ordering, and pointers passed into scene-building code.
+- **Low/high culling RAM (5.5 MiB including guards):** these are also PPC-visible and are read by the scene builder. The guard words are intentional: upstream notes that game-generated node, matrix, LOD, and pointer-list reads may start in-range and extend beyond the nominal end. Simply deleting the guards risks out-of-bounds reads. Sparse backing or guard-page logic would need to preserve zero-filled overrun behaviour.
+- **Tile RAM (1.125 MiB):** likely less attractive to optimize first because it is comparatively small and the renderer reads it as a contiguous device memory.
+- **PPC RAM (8 MiB):** the recompiled PPC code attaches directly to `ram.data()`; its direct accesses and invalidation tracking make paging or sparse backing a major CPU-core change. It is not a quick win.
+- **Texture FIFO (up to 1 MiB reserved):** this is transient staging memory, but it can contain a sequence of commands/data that `r3d_flush_textures()` later consumes. A bounded streaming/chunked consumer might reduce the peak, but only after confirming that texture upload and mipmap parsing never need to look backwards or retain the complete FIFO.
+
+### Practical order for the next memory experiments
+
+1. Inspect Naomi renderer allocations and PVR2 VRAM ownership before choosing any VRAM aliasing strategy.
+2. Measure actual peak use with a minimal Naomi runtime and renderer, not just the emulated board arrays.
+3. Prototype lazy/zero-backed pages for polygon RAM and culling RAM in a host-side test first; retain the existing guards and exact PPC-visible semantics.
+4. Evaluate chunked texture FIFO processing only if its parser can be made streaming without changing texture upload ordering.
+5. Treat PPC RAM and fixed device arrays as late-stage work, not the first memory optimization targets.
