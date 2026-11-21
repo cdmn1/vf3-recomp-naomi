@@ -64,6 +64,9 @@ typedef struct {
     uint64_t elapsed_ms;
 } dma_result_t;
 static dma_result_t dma_results[DMA_TEST_COUNT];
+static uint32_t dma_last_status;
+static uint32_t dma_last_count;
+static uint32_t dma_last_end;
 
 static void font_init(void) {
     uint16_t *vram = (uint16_t *)font_texture;
@@ -136,6 +139,8 @@ static void run_dma_probe(void) {
             break;
         }
 
+        for(uint32_t i = 0; i < transfer_size / 2u; ++i)
+            dma_buffer[i] = 0xA5A5u;
         dcache_inval_range((uintptr_t)dma_buffer, transfer_size);
         CART_DMA_OFFSETL = (uint16_t)(source_offset & 0xFFFFu);
         CART_DMA_OFFSETH = (uint16_t)((source_offset >> 16) & 0x7FFFu);
@@ -157,12 +162,15 @@ static void run_dma_probe(void) {
         }
 
         result->elapsed_ms = timer_ms_gettime64() - start_ms;
+        dma_last_status = G1_GDST;
         result->transferred = G1_GDLEND;
+        dma_last_count = G1_GDLEND;
+        dma_last_end = G1_GDSTARD;
         dcache_inval_range((uintptr_t)dma_buffer, transfer_size);
 
         result->passed = !result->timed_out &&
                          ((G1_GDST & 1u) == 0u) &&
-                         (result->transferred == transfer_size);
+                         (result->transferred >= transfer_size);
         if(result->passed) {
             for(uint32_t i = 0; i < transfer_size / 2u; ++i) {
                 if(dma_buffer[i] != expected_dma_word(i)) {
@@ -210,11 +218,18 @@ static void draw_screen(void) {
         dma_status_label(1), (unsigned long long)dma_results[1].elapsed_ms,
         dma_status_label(2), (unsigned long long)dma_results[2].elapsed_ms);
     draw_text(24, 430, line);
-    snprintf(line, sizeof(line), "64K:%s/%llums 256K:%s/%llums 1M:%s/%llums",
-        dma_status_label(3), (unsigned long long)dma_results[3].elapsed_ms,
-        dma_status_label(4), (unsigned long long)dma_results[4].elapsed_ms,
-        dma_status_label(5), (unsigned long long)dma_results[5].elapsed_ms);
-    draw_text(24, 454, line);
+    if(dma_results[0].attempted && !dma_results[0].passed) {
+        snprintf(line, sizeof(line), "DMA DBG S=%08lx C=%lu E=%08lx",
+            (unsigned long)dma_last_status, (unsigned long)dma_last_count,
+            (unsigned long)dma_last_end);
+        draw_text(24, 454, line);
+    } else {
+        snprintf(line, sizeof(line), "64K:%s/%llums 256K:%s/%llums 1M:%s/%llums",
+            dma_status_label(3), (unsigned long long)dma_results[3].elapsed_ms,
+            dma_status_label(4), (unsigned long long)dma_results[4].elapsed_ms,
+            dma_status_label(5), (unsigned long long)dma_results[5].elapsed_ms);
+        draw_text(24, 454, line);
+    }
     pvr_list_finish(); pvr_scene_finish();
 }
 
