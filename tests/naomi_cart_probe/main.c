@@ -177,6 +177,11 @@ static void run_dma_probe(void) {
     }
 }
 
+static const char *dma_status_label(int index) {
+    if(!dma_results[index].attempted) return "SKIP";
+    return dma_results[index].passed ? "OK" : "FAIL";
+}
+
 static void draw_screen(void) {
     char line[96];
     pvr_wait_ready(); pvr_scene_begin(); pvr_list_begin(PVR_LIST_TR_POLY);
@@ -200,14 +205,11 @@ static void draw_screen(void) {
         draw_text(24, 130 + i * 24, line);
     }
     snprintf(line, sizeof(line), "DMA 32:%s 256:%s 4K:%s 64K:%s",
-        dma_results[0].passed ? "OK" : "FAIL",
-        dma_results[1].passed ? "OK" : "FAIL",
-        dma_results[2].passed ? "OK" : "FAIL",
-        dma_results[3].passed ? "OK" : "FAIL");
+        dma_status_label(0), dma_status_label(1),
+        dma_status_label(2), dma_status_label(3));
     draw_text(24, 430, line);
     snprintf(line, sizeof(line), "DMA 256K:%s 1M:%s 1M:%llums",
-        dma_results[4].passed ? "OK" : "FAIL",
-        dma_results[5].passed ? "OK" : "FAIL",
+        dma_status_label(4), dma_status_label(5),
         (unsigned long long)dma_results[5].elapsed_ms);
     draw_text(24, 454, line);
     pvr_list_finish(); pvr_scene_finish();
