@@ -120,6 +120,7 @@ static uint16_t expected_dma_word(uint32_t index) {
     return (uint16_t)(0xA500u ^ ((index * 73u + (index >> 5)) & 0xFFFFu));
 }
 
+/* Per-size elapsed times are rendered with each DMA result for easy capture. */
 static void run_dma_probe(void) {
     const uint32_t source_offset = 0x00100000u;
     const uint64_t timeout_ms = 5000u;
