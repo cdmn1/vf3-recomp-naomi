@@ -181,26 +181,25 @@ Consequences:
 - Naomi PVR2 VRAM should be treated as a separate, finite resource with explicit allocations for framebuffers, tile lists, textures, and command buffers. It is not additional SH-4 heap and cannot be double-counted as free capacity.
 - The first renderer milestone should be a low-memory, native-resolution PVR2 path with no CPU raster fallback and no retained desktop frame-history buffers. Widescreen, interpolation history, panoramas, and optional visual enhancements should be left out initially.
 
-## 12. Naomi cartridge reads: PIO versus Holly G1 DMA
 
-A closer register-level investigation distinguishes two different register groups that are easy to confuse:
+## 12. Cartridge DMA registers: do not confuse them with GD-ROM DMA
 
-- The cartridge/ROM-board registers at `0xA05F7000`–`0xA05F7014` include the PIO offset/data interface and a separate DMA source-offset/count interface. In Flycast these are represented as `RomPioOffset`, `DmaOffset`, and `DmaCount`. The DMA offset/count registers do not themselves launch a transfer.
-- The actual transfer engine is Holly's G1/GD-ROM DMA block at `0xA05F7404`–`0xA05F7418`: destination address (`SB_GDSTAR`), length (`SB_GDLEN`), direction (`SB_GDDIR`), enable (`SB_GDEN`), and start/status (`SB_GDST`). Flycast's Naomi DMA handler obtains source blocks from the cartridge via `GetDmaPtr()`, copies them to SH-4 memory, advances the cartridge source pointer, and completes/raises the GD-ROM DMA interrupt.
-- The transfer length is specified in 32-byte units, and the G1 path is the hardware data mover. A Dreamcast architecture document quotes 14.4 MB/s as the documented GD-ROM-to-system-RAM rate; that is a reference ceiling/context, not a measured NetDIMM result.
+A deeper source check corrected the earlier DMA hypothesis. The Naomi cartridge register block and Holly's GD-ROM DMA controller are separate interfaces:
 
-This makes Holly G1 DMA a promising alternative to reading every word through the 16-bit PIO data register. If the physical Naomi NetDIMM ROM board supports the same cartridge DMA source path (as the emulator models), it could transfer aligned blocks directly into a bounded SH-4 RAM buffer. That would suit both the 8 MiB CROM bank-window refill and sequential VROM chunks much better than per-word CPU PIO.
+- Cartridge PIO registers: `0x005F7000`, `0x005F7004`, and `0x005F7008`.
+- Cartridge DMA source registers in Flycast's Naomi register model: `0x005F700C` (source offset high), `0x005F7010` (source offset low), and `0x005F7014` (count).
+- Holly GD-ROM DMA controller: `0x005F7404`–`0x005F7418`, including destination, length, direction, enable, and start/status.
 
-### Important distinction and remaining proof
+The existence of both register groups does **not** establish that the GD-ROM DMA engine can fetch from the Naomi cartridge/NetDIMM. Flycast's `NaomiCartridge` stores the cartridge `DmaOffset` and `DmaCount` and exposes them through the cartridge register model. Its `GetDmaPtr()` is a host-side emulator method; the inspected use in `GetBootId()` copies from that host pointer with `memcpy`. This is not a physical SH-4 DMA operation.
 
-The v59/v60 PIO probe does not test G1 DMA. Nor does the presence of the DMA registers prove that arbitrary NetDIMM offsets can be DMA-read on physical hardware. The emulator source establishes the register model and data flow, not the real board's timing, supported offsets, transfer limits, or NetDIMM-specific behavior.
+Likewise, the Holly registers are explicitly named and modelled as GD-ROM DMA. Their presence and the documented GD-ROM transfer characteristics cannot be used as proof of a NetDIMM cartridge DMA path. The earlier suggestion that the G1 GD-ROM DMA engine could directly refill a NetDIMM-backed CROM window was therefore premature and is withdrawn.
 
-Before implementing a DMA-backed ROM source:
+### Safe conclusion and next step
 
-1. Finish the pending v60 physical PIO test; this independently verifies the large-image offsets.
-2. Build a separate read-only DMA probe that sets a cartridge source offset, transfers a small aligned block into a reserved SH-4 RAM buffer, and displays the bytes/checksum on screen.
-3. Test a few known marker offsets first, then increase transfer size and measure throughput with the SH-4 timer.
-4. Keep the destination entirely inside a reserved main-RAM scratch buffer; do not target PVR/texture memory or overwrite the executable/stack.
-5. Verify transfer completion and error/timeout handling before using DMA in a runtime cache.
+- PIO remains the only physically demonstrated NetDIMM read mechanism in this project (v59 markers at 1, 2, and 3 MiB).
+- The v60 64 MiB PIO range test remains pending its physical result.
+- The cartridge DMA offset/count registers are worth researching, but their physical semantics, trigger mechanism, destination path, and relationship to NetDIMM must be established from Naomi hardware documentation or a known-good Naomi implementation before any register writes are attempted.
+- Do not write the Holly GD-ROM DMA registers as a NetDIMM experiment.
+- Continue with read-only PIO range and throughput measurements first. If a verified cartridge DMA procedure is found later, test it separately with a small aligned block and a reserved SH-4 RAM destination.
 
-Do not confuse the cartridge's source offset/count registers with the G1 DMA engine's destination/length/control registers. Do not use the DMA path in the game port until it has passed on real Naomi hardware.
+This correction supersedes the earlier proposal to use Holly G1 GD-ROM DMA for NetDIMM reads.
