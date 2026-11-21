@@ -158,3 +158,25 @@ The save-state page-generation arrays are comparatively tiny: one 32-bit generat
 3. Prototype lazy/zero-backed pages for polygon RAM and culling RAM in a host-side test first; retain the existing guards and exact PPC-visible semantics.
 4. Evaluate chunked texture FIFO processing only if its parser can be made streaming without changing texture upload ordering.
 5. Treat PPC RAM and fixed device arrays as late-stage work, not the first memory optimization targets.
+
+
+## 11. Upstream software-renderer memory is another major exclusion
+
+The pinned upstream CPU rasterizer is not suitable to copy unchanged into a Naomi 32 MiB main-memory build. At the game's native 496×384 output (190,464 pixels), `video::Raster::alloc()` creates:
+
+| Buffer | Bytes per pixel | Approx. size |
+|---|---:|---:|
+| `base`, `t1`, `t2` (each `Px` is four floats) | 48 total | 8.72 MiB |
+| `depth`, `depth_saved` | 8 total | 1.45 MiB |
+| `stencil`, `stencil_saved` | 2 total | 0.36 MiB |
+| **Raster buffers** | **58 total** | **10.53 MiB** |
+
+This excludes the transformed triangle lists, scene/model vectors, tile-generator outputs, texture copies, and display buffers. The tile generator alone keeps two 496×384 RGBA layers (about 1.46 MiB together), a 1008×384 wide layer (about 1.48 MiB), and optional plate/wide/tall intermediates. The desktop host also keeps multiple copies of frame layers and uploads the Model 3 texture RAM into renderer-owned texture resources.
+
+Consequences:
+
+- A Naomi port needs a purpose-built PVR2 renderer, not the upstream CPU rasterizer.
+- Do not allocate the desktop renderer's multiple CPU frame layers on Naomi.
+- The 8 MiB Model 3 texture RAM is conceptually separate from the PVR2's own VRAM allocations. A hardware renderer may upload or cache texture regions in PVR2 VRAM, but the Model 3 source remains authoritative and must preserve its write/update semantics.
+- Naomi PVR2 VRAM should be treated as a separate, finite resource with explicit allocations for framebuffers, tile lists, textures, and command buffers. It is not additional SH-4 heap and cannot be double-counted as free capacity.
+- The first renderer milestone should be a low-memory, native-resolution PVR2 path with no CPU raster fallback and no retained desktop frame-history buffers. Widescreen, interpolation history, panoramas, and optional visual enhancements should be left out initially.
