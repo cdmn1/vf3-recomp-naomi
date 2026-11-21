@@ -92,7 +92,7 @@ static void draw_screen(void) {
         snprintf(line, sizeof(line), "%08lx %04x  %04x  %04x  %04x",
             (unsigned long)offsets[i], values[i][0], values[i][1],
             values[i][2], values[i][3]);
-        draw_text(24, 120 + i * 26, line);
+        draw_text(24, 116 + i * 24, line);
         if(i >= 3 && i <= 10)
             check = marker_ok[i] ? "MARKER OK" : "BAD MARKER";
         else if(i == 11)
@@ -101,10 +101,10 @@ static void draw_screen(void) {
             check = "DATA SAMPLE";
         snprintf(line, sizeof(line), "REPEAT: %s  %s",
             stable[i] ? "MATCH" : "MISMATCH", check);
-        draw_text(24, 134 + i * 26, line);
+        draw_text(24, 130 + i * 24, line);
     }
-    draw_text(24, 444, "PIO AUTO-INCREMENT: 16-BIT WORDS");
-    draw_text(24, 468, "MARKERS THROUGH 63 MiB; EOF AT 64 MiB");
+    draw_text(24, 430, "PIO AUTO-INCREMENT: 16-BIT WORDS");
+    draw_text(24, 454, "MARKERS THROUGH 63 MiB; EOF AT 64 MiB");
     pvr_list_finish(); pvr_scene_finish();
 }
 
