@@ -178,9 +178,10 @@ static void run_dma_probe(void) {
         result->passed = !result->timed_out &&
                          ((G1_GDST & 1u) == 0u) &&
                          (result->transferred >= transfer_size);
+        for(uint32_t i = 0; i < 16u; ++i)
+            dma_words[i] = dma_buffer[i];
         if(result->passed) {
             for(uint32_t i = 0; i < transfer_size / 2u; ++i) {
-                if(i < 16u) dma_words[i] = dma_buffer[i];
                 if(dma_buffer[i] != expected_dma_word(i)) {
                     result->passed = 0;
                     dma_mismatch_index = i;
@@ -189,8 +190,6 @@ static void run_dma_probe(void) {
                     break;
                 }
             }
-        } else {
-            for(uint32_t i = 0; i < 16u; ++i) dma_words[i] = dma_buffer[i];
         }
 
         G1_GDEN = 0u;
