@@ -200,7 +200,90 @@ static void run_dma_probe(void) {
 
 static const char *dma_status_label(int index) {
     if(!dma_results[index].attempted) return "SKIP";
+    if(dma_results[index].timed_out) return "TIMEOUT";
     return dma_results[index].passed ? "OK" : "FAIL";
+}
+
+static void draw_dma_summary_screen(void) {
+    char line[96];
+    pvr_wait_ready(); pvr_scene_begin(); pvr_list_begin(PVR_LIST_TR_POLY);
+    draw_text(24, 20, "NAOMI CARTRIDGE DMA SIZE TESTS");
+    draw_text(24, 52, "SOURCE OFFSET 00100000 - EACH SIZE CHECKED");
+    for(int i = 0; i < DMA_TEST_COUNT; ++i) {
+        const uint32_t size = dma_sizes[i];
+        if(size < 1024u)
+            snprintf(line, sizeof(line), "%4luB  %-6s COUNT=%lu  %lums",
+                (unsigned long)size, dma_status_label(i),
+                (unsigned long)dma_results[i].transferred,
+                (unsigned long)dma_results[i].elapsed_ms);
+        else
+            snprintf(line, sizeof(line), "%4luK  %-6s COUNT=%lu  %lums",
+                (unsigned long)(size / 1024u), dma_status_label(i),
+                (unsigned long)dma_results[i].transferred,
+                (unsigned long)dma_results[i].elapsed_ms);
+        draw_text(24, 92 + i * 28, line);
+    }
+    snprintf(line, sizeof(line), "FINAL STATUS=%08lx END=%08lx",
+        (unsigned long)dma_last_status, (unsigned long)dma_last_end);
+    draw_text(24, 284, line);
+    snprintf(line, sizeof(line), "FINAL COUNT=%lu FIRST MISMATCH=%s",
+        (unsigned long)dma_last_count,
+        dma_mismatch_index == 0xFFFFFFFFu ? "NONE" : "FOUND");
+    draw_text(24, 316, line);
+    if(dma_mismatch_index != 0xFFFFFFFFu) {
+        snprintf(line, sizeof(line), "INDEX=%lu GOT=%04x EXPECTED=%04x",
+            (unsigned long)dma_mismatch_index, dma_mismatch_actual,
+            dma_mismatch_expected);
+        draw_text(24, 348, line);
+    } else {
+        draw_text(24, 348, "NO WORD MISMATCH IN ATTEMPTED TRANSFERS");
+    }
+    draw_text(24, 420, "DMA DATA WORDS ON NEXT SCREEN");
+    pvr_list_finish(); pvr_scene_finish();
+}
+
+static void draw_dma_screen(void) {
+    char line[96];
+    pvr_wait_ready(); pvr_scene_begin(); pvr_list_begin(PVR_LIST_TR_POLY);
+    draw_text(24, 20, "NAOMI CARTRIDGE DMA DATA DETAIL");
+    draw_text(24, 52, "RECEIVED WORDS (SH-4 LITTLE-ENDIAN)");
+    draw_text(24, 92, "GOT  00-03");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        dma_words[0], dma_words[1], dma_words[2], dma_words[3]);
+    draw_text(180, 92, line);
+    draw_text(24, 120, "GOT  04-07");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        dma_words[4], dma_words[5], dma_words[6], dma_words[7]);
+    draw_text(180, 120, line);
+    draw_text(24, 148, "GOT  08-11");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        dma_words[8], dma_words[9], dma_words[10], dma_words[11]);
+    draw_text(180, 148, line);
+    draw_text(24, 176, "GOT  12-15");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        dma_words[12], dma_words[13], dma_words[14], dma_words[15]);
+    draw_text(180, 176, line);
+    draw_text(24, 236, "EXPECTED WORDS 00-03");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        expected_dma_word(0), expected_dma_word(1),
+        expected_dma_word(2), expected_dma_word(3));
+    draw_text(24, 260, line);
+    draw_text(24, 292, "EXPECTED WORDS 04-07");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        expected_dma_word(4), expected_dma_word(5),
+        expected_dma_word(6), expected_dma_word(7));
+    draw_text(24, 316, line);
+    draw_text(24, 348, "EXPECTED WORDS 08-11");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        expected_dma_word(8), expected_dma_word(9),
+        expected_dma_word(10), expected_dma_word(11));
+    draw_text(24, 372, line);
+    draw_text(24, 404, "EXPECTED WORDS 12-15");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        expected_dma_word(12), expected_dma_word(13),
+        expected_dma_word(14), expected_dma_word(15));
+    draw_text(24, 428, line);
+    pvr_list_finish(); pvr_scene_finish();
 }
 
 static void draw_pio_screen(void) {
@@ -312,8 +395,10 @@ int main(void) {
     if(!font_texture) for(;;) thd_sleep(1000);
     font_init();
     for(;;) {
-        int dma_page = ((timer_ms_gettime64() / 3000u) & 1u) != 0u;
-        if(dma_page) draw_dma_screen(); else draw_pio_screen();
+        uint32_t page = (uint32_t)((timer_ms_gettime64() / 3000u) % 3u);
+        if(page == 0u) draw_pio_screen();
+        else if(page == 1u) draw_dma_summary_screen();
+        else draw_dma_screen();
         thd_sleep(16);
     }
     return 0;
