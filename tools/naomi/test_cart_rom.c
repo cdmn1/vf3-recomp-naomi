@@ -12,12 +12,12 @@
 #define VROM_OFF   0x05801000u
 #define PAYLOAD_SZ 0x06801000u
 
-static uint8_t *cart;
+static uint8_t *cart; static unsigned dma_calls;
 static void put32(uint8_t *p,uint32_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);p[2]=(uint8_t)(v>>16);p[3]=(uint8_t)(v>>24);}
 static uint32_t crc_zeros(uint32_t n){static const uint8_t z[65536]={0};uint32_t s=0xFFFFFFFFu;while(n){uint32_t k=n>sizeof(z)?sizeof(z):n;s=naomi_cart_crc32_update(s,z,k);n-=k;}return s^0xFFFFFFFFu;}
 naomi_cart_dma_status_t naomi_cart_dma_read(uint32_t off,void *dst,uint32_t len,uint32_t timeout,naomi_cart_dma_result_t *r){
  if(!cart||!dst||!timeout||(off&31u)||((uintptr_t)dst&31u)||(len&31u)||(uint64_t)off+len>IMAGE_SIZE)return NAOMI_CART_DMA_INVALID;
- memcpy(dst,cart+off,len);if(r){r->transferred=len;r->last_count=len;r->last_status=0;r->last_end=0;r->elapsed_ms=0;}return NAOMI_CART_DMA_OK;
+ ++dma_calls;memcpy(dst,cart+off,len);if(r){r->transferred=len;r->last_count=len;r->last_status=0;r->last_end=0;r->elapsed_ms=0;}return NAOMI_CART_DMA_OK;
 }
 static void make_header(void){uint8_t*h=cart+0x01000000u;memset(h,0,4096);memcpy(h,NAOMI_CART_IMAGE_MAGIC,8);put32(h+8,1);put32(h+12,4096);put32(h+16,1);put32(h+20,3);put32(h+24,PAYLOAD_SZ);
  put32(h+32,1);put32(h+36,FIXED_OFF);put32(h+40,0x800000);put32(h+44,crc_zeros(0x800000));
@@ -37,7 +37,13 @@ int main(void){
  assert(naomi_cart_rom_select_bank(&rom,15)==NAOMI_CART_IMAGE_OK);
  const uint8_t*p=naomi_cart_rom_banked_page(&rom,0,&io);assert(p&&p[0]==0x27);
  p=naomi_cart_rom_banked_page(&rom,0x1234,&io);assert(p&&p[0]==0x27);
- p=naomi_cart_rom_banked_page(&rom,0x10000,&io);assert(p&&p[0]==0x27);
+ p=naomi_cart_rom_banked_page(&rom,0x1234,&io);assert(p&&p[0]==0x27);
+ unsigned hits=dma_calls;assert(naomi_cart_rom_banked_page(&rom,0x1FF0,&io)==p);assert(dma_calls==hits);
+ assert(naomi_cart_rom_banked_page(&rom,0x10000,&io)!=0);
+ assert(naomi_cart_rom_banked_page(&rom,0x20000,&io)!=0);
+ assert(naomi_cart_rom_banked_page(&rom,0x30000,&io)!=0);
+ assert(naomi_cart_rom_banked_page(&rom,0x40000,&io)!=0);
+ hits=dma_calls;assert(naomi_cart_rom_banked_page(&rom,0,&io)!=0);assert(dma_calls==hits+1);
  assert(naomi_cart_rom_banked_page(&rom,NAOMI_CART_CROM_BANK_SIZE,&io)==0);
  free(cart);puts("VF3 CROM 64 KiB page cache: PASS");return 0;
 }
