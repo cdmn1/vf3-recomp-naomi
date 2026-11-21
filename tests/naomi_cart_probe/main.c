@@ -50,11 +50,12 @@ static uint16_t values[12][4];
 static uint16_t repeat_values[12][4];
 static int stable[12];
 static int marker_ok[12];
-#define DMA_MAX_BYTES 0x00100000u
-#define DMA_TEST_COUNT 6
+#define DMA_MAX_BYTES 0x00400000u
+#define DMA_TEST_COUNT 8
 static uint16_t dma_buffer[DMA_MAX_BYTES / 2] __attribute__((aligned(32)));
 static const uint32_t dma_sizes[DMA_TEST_COUNT] = {
-    32u, 256u, 4096u, 65536u, 262144u, 1048576u
+    32u, 256u, 4096u, 65536u, 262144u, 1048576u,
+    2097152u, 4194304u
 };
 typedef struct {
     int attempted;
@@ -116,7 +117,7 @@ static void read_words(uint32_t offset, uint16_t out[4]) {
 
 /*
  * Characterize cartridge-to-RAM G1 DMA using a deterministic 1 MiB payload
- * at source offset 1 MiB. Every transfer is 32-byte aligned and checked
+ * at source offset 36 MiB. Every transfer is 32-byte aligned and checked
  * word-for-word. The NetDIMM image is only read.
  */
 static uint16_t expected_dma_word(uint32_t index) {
@@ -132,7 +133,7 @@ static uint16_t expected_dma_word(uint32_t index) {
 
 /* Per-size elapsed times are rendered with each DMA result for easy capture. */
 static void run_dma_probe(void) {
-    const uint32_t source_offset = 0x00100000u;
+    const uint32_t source_offset = 0x02400000u;
     const uint64_t timeout_ms = 5000u;
 
     for(int test = 0; test < DMA_TEST_COUNT; ++test) {
@@ -208,7 +209,7 @@ static void draw_dma_summary_screen(void) {
     char line[96];
     pvr_wait_ready(); pvr_scene_begin(); pvr_list_begin(PVR_LIST_TR_POLY);
     draw_text(24, 20, "NAOMI CARTRIDGE DMA SIZE TESTS");
-    draw_text(24, 52, "SOURCE OFFSET 00100000 - EACH SIZE CHECKED");
+    draw_text(24, 52, "SOURCE OFFSET 02400000 - EACH SIZE CHECKED");
     for(int i = 0; i < DMA_TEST_COUNT; ++i) {
         const uint32_t size = dma_sizes[i];
         if(size < 1024u)
@@ -221,7 +222,7 @@ static void draw_dma_summary_screen(void) {
                 (unsigned long)(size / 1024u), dma_status_label(i),
                 (unsigned long)dma_results[i].transferred,
                 (unsigned long)dma_results[i].elapsed_ms);
-        draw_text(24, 92 + i * 28, line);
+        draw_text(24, 80 + i * 24, line);
     }
     snprintf(line, sizeof(line), "FINAL STATUS=%08lx END=%08lx",
         (unsigned long)dma_last_status, (unsigned long)dma_last_end);
