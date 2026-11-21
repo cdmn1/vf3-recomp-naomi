@@ -1,0 +1,26 @@
+name: Naomi ROM packer tests
+
+on:
+  push:
+    branches: [main, softfloat-rounding-experiment]
+    paths:
+      - "tools/naomi/**"
+      - ".github/workflows/naomi-rom-packer.yml"
+  pull_request:
+    paths:
+      - "tools/naomi/**"
+      - ".github/workflows/naomi-rom-packer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test ROM placement, byte order and image header
+        run: python3 -m unittest discover -s tools/naomi -p 'test_*.py' -v
+      - name: Check packer CLI
+        run: python3 tools/naomi/pack_vf3_roms.py --help

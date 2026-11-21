@@ -1,6 +1,6 @@
 # Naomi cartridge / NetDIMM DMA reader
 
-This branch now has a synchronous, allocation-free G1 DMA transport primitive in `platform/naomi/cart_dma.c`.
+This branch has a synchronous, allocation-free G1 DMA transport primitive in platform/naomi/cart_dma.c.
 
 ## Contract
 
