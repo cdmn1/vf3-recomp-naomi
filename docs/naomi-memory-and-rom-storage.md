@@ -232,3 +232,20 @@ This is the first physical confirmation of the cartridge-to-G1 DMA path. It vali
 The next probe retains the PIO/PPC/FPU regression tests and adds independent G1 DMA transfers of 32 B, 256 B, 4 KiB, 64 KiB, 256 KiB, and 1 MiB. The first MiB after the 1 MiB source offset contains a deterministic word sequence; the probe compares every transferred 16-bit word, checks the reported transferred byte count, and uses a 5-second timeout per transfer. All tested sizes are multiples of the 32-byte alignment already required by the successful v62 transfer.
 
 This is a bounded size/throughput characterization, not a claim that 1 MiB DMA will work. If a transfer times out, subsequent sizes are skipped. PIO remains the fallback. Throughput can be calculated from the on-screen SH-4 timer measurements after the results are returned.
+
+## 10. v74 Flycast cartridge results
+
+The v74 Flycast run extended the PIO marker test through 8 MiB and confirmed repeatable reads at all tested offsets. The 64 MiB test-image EOF returned four 0xFFFF words consistently. This is an image-boundary result, not a measurement of the physical cartridge's maximum address.
+
+The same run verified G1 DMA byte-for-byte from source offset 36 MiB for transfer sizes from 32 bytes through 4 MiB. The 4 MiB transfer completed in about 212 ms, reported exactly 4,194,304 bytes, and had no word mismatch. The 16 displayed received words all matched the expected sequence. Treat these as authoritative Flycast results for the tested setup; do not describe them as physical Naomi results.
+
+## 11. Fixed-CROM instruction fetch versus banked-CROM data reads
+
+The pinned PPC core makes an important distinction:
+
+- `ppc::Cpu::fetch()` reads instruction words directly from the fixed-CROM pointer supplied by `Cpu::attach()`. The 8 MiB fixed CROM must therefore be available as a stable, directly readable memory region for instruction fetches and exception vectors.
+- Ordinary PPC data accesses outside PPC RAM call the Model 3 bus handlers. The `0xFFxxxxxx` handlers select either the fixed CROM or the currently selected banked-CROM pointer. Banked CROM is therefore a candidate for a resident window that is synchronously refilled when `set_crom_bank()` changes the selected 8 MiB bank.
+- `r3d_texture_port()` is a separate sequential VROM consumer. It reads a length word at a 24-bit word address, then appends sequential words to the texture FIFO, stopping when the FIFO reaches its 1 MiB capacity. A bounded VROM streamer can preserve the 24-bit wrap without a duplicated 64 MiB resident vector.
+
+The source-level access patterns support the proposed fixed-CROM + bank-window + VROM-streaming design. They do not solve the Naomi 32 MiB RAM budget: the existing board working set still needs a Naomi-specific allocation plan, particularly for texture RAM and the renderer.
+
