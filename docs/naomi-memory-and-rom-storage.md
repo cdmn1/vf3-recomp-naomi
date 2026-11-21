@@ -56,9 +56,9 @@ The current code uses a 24-bit word address and wraps it with `0xFFFFFF`; the ba
 
 The current board loader stores these as vectors, but the current Model 3 board core does not consume them in its PPC read handlers. The sound board is explicitly not yet emulated (the board sends MIDI bytes to it). These regions should not be allocated until a Naomi sound-board implementation actually needs them.
 
-## 4. NetDIMM access is not yet established
+## 4. Naomi cartridge PIO access: partially established
 
-The Dreamcast-oriented KallistiOS `dc/cdrom.h` interface is not a safe assumption for Naomi NetDIMM media. Its own documentation says the high-density GD-ROM area is deliberately not accessible through that CD-ROM API. Naomi NetDIMM is a different target and needs its actual access path verified before selecting a storage backend.
+The Dreamcast-oriented KallistiOS `dc/cdrom.h` interface is not a safe assumption for Naomi NetDIMM media. Its own documentation says the high-density GD-ROM area is deliberately not accessible through that CD-ROM API. Naomi NetDIMM is a different target. A read-only physical probe now confirms that the Naomi cartridge PIO register path can retrieve repeatable image data at offsets through 3 MiB (v59). The v60 64 MiB probe has compiled and is awaiting the corresponding physical result. Arbitrary high-offset access is therefore partially established, but full address range, sustained throughput, and latency are still unmeasured.
 
 Do not assume that:
 - the complete NetDIMM image is directly addressable as ordinary SH-4 RAM;
@@ -69,12 +69,13 @@ The existing Daytona Naomi work establishes useful Naomi boot, BIOS-helper, and 
 
 ## 5. Next implementation sequence
 
-1. Establish the supported Naomi-side way to read arbitrary offsets from the loaded NetDIMM game image (or prove that no such API exists and identify the actual hardware path).
-2. Build a tiny on-screen Naomi probe that reads known offsets, verifies bytes/checksums, and measures repeated/random/sequential read latency. No serial output is assumed.
+1. Complete physical PIO range validation with v60 (64 MiB); only then extend the test toward the full 64 MiB banked-CROM and 32 MiB VROM source regions.
+2. Measure sequential and random PIO throughput on hardware, using checksummed blocks and on-screen results.
 3. Define a read-only ROM source interface with explicit bounded buffers; keep the desktop vector-backed implementation unchanged.
-4. Implement banked CROM page/window caching and VROM sequential page reads against that interface.
-5. Measure the mutable working set separately. Investigate reuse/aliasing of Naomi PVR2 VRAM only where hardware semantics permit it; do not move emulated Model 3 RAM into PVR memory by assumption.
-6. Only then attempt a full Model 3 board link and frame test.
+4. Implement an 8 MiB banked-CROM window backed by PIO reads. Keep the 8 MiB fixed CROM in main RAM because it is patched and is used directly by the PPC boot path.
+5. Implement VROM as bounded sequential PIO reads in `r3d_texture_port()`, preserving the 24-bit word-address wrap and texture FIFO limit.
+6. Measure and reduce the mutable working set separately. Investigate PVR2 VRAM only where its real hardware semantics permit it.
+7. Only then attempt a full Model 3 board link and frame test.
 
 No ROMs or commercial game assets belong in this repository.
 
@@ -112,3 +113,24 @@ The v60 probe image was built and packaged successfully by CI. It is padded to e
 This tests a much wider portion of the PIO address range while remaining below the common 256 MiB and 512 MiB Naomi NetDIMM memory configurations. Capacity variants are documented by NetDIMM references; the actual installed capacity must still be respected. The PIO high-offset register uses a 15-bit offset field in the Flycast hardware model, which is consistent with a 31-bit byte offset, but physical range and timing remain subject to hardware validation.
 
 The 64 MiB probe is still a sparse logical image with only a few marker bytes populated. It tests addressability, not bulk transfer speed or the cost of loading a full 64 MiB image.
+
+
+## 9. Source-level ROM backing design (pinned upstream)
+
+Inspection of the pinned upstream implementation narrows the first Naomi storage implementation substantially:
+
+- `romset::load()` creates complete temporary ROM regions, then copies them into final vectors. The temporary region sizes are 2 MiB CROM, 64 MiB banked CROM, 32 MiB VROM, 512 KiB sound, and 8 MiB samples. The banked CROM, VROM, and samples are then duplicated in their final vectors. The ZIP is also read completely into memory. This loading path should not be ported to Naomi.
+- The final 8 MiB fixed CROM consists of the 2 MiB fixed program ROM region at its upper end and the first 6 MiB of banked CROM at its lower end. It is modified by the existing free-play and Dural patch routines, so keeping this 8 MiB region resident is the lowest-risk first step.
+- The 128 MiB banked-CROM vector is two copies of a 64 MiB logical region. `set_crom_bank()` selects one of sixteen 8 MiB windows; windows 0–7 address the first 64 MiB and windows 8–15 mirror it. A Naomi implementation therefore needs only one resident 8 MiB bank window, plus fixed CROM, if bank changes synchronously refill that window before PPC execution continues. The bank window must remain stable for the duration of each PPC memory access and must preserve the current host-word byte order.
+- VROM's 64 MiB vector is two copies of a 32 MiB logical region. `r3d_texture_port()` is its only direct consumer in the inspected board core: it reads a length word and then sequential words into a FIFO capped at 1 MiB. A bounded scratch buffer can feed the FIFO from PIO without keeping all VROM resident. The 24-bit word-address wrap must be retained, and each request may cross the end of the 32 MiB logical image.
+- Sound ROM and samples can remain unallocated for the current board-core scope because no current PPC read handler consumes them; audio is not yet implemented.
+
+### Important remaining loader decision
+
+The current desktop path accepts a ZIP and performs ROM-set identification, CRC checks, interleaving, byte swaps, mirroring, and profile-specific placement. A raw appended ZIP could be parsed through PIO, but it would still require decompression buffers and full region construction unless the loader is redesigned. The cleaner Naomi route is likely an offline packer that accepts the user's existing ROM ZIP and emits a compact, deterministic raw-region payload (with a small manifest containing profile, region offsets/sizes, and checksums). The Naomi executable can then read fixed CROM, selected bank windows, and VROM ranges directly from that payload. This avoids shipping a general ZIP/deflate implementation in the Naomi runtime and avoids duplicating mirrored regions.
+
+The payload must preserve the exact byte/word ordering expected by the PPC bus handlers and Real3D texture port. The packer should reuse or faithfully port the upstream ROM placement metadata and validate every source ROM CRC before producing output. No game ROMs or generated commercial payloads are to be committed to this repository.
+
+### RAM budget implication
+
+With an 8 MiB fixed CROM and one 8 MiB bank window resident, ROM working memory would be approximately 16 MiB, before VROM scratch buffers. That is a substantial reduction from the current 216.5 MiB final ROM vectors, but it leaves only about 16 MiB of Naomi main RAM for the 27.5 MiB current mutable board allocations, executable, stack, renderer, and allocator. The mutable working set therefore remains a separate blocker; the ROM cache design alone does not make the full port fit in 32 MiB.
