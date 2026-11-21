@@ -7,6 +7,9 @@ on:
       - "tests/ppc_interpreter_smoke/**"
       - "tests/naomi_fpu_probe/**"
       - "tests/naomi_cart_probe/**"
+      - "platform/naomi/**"
+      - "tools/naomi/test_cart_rom.c"
+      - "tools/naomi/test_cart_image_format.py"
       - "VERSION"
       - ".github/workflows/naomi-ppc-interpreter.yml"
   workflow_dispatch:
