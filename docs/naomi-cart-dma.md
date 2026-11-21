@@ -39,16 +39,17 @@ This is not yet connected to the Model 3 board core. It does not yet:
 The next porting step is to integrate the reader with the upstream Model 3 memory paths while solving the Naomi 32 MiB main-RAM budget. No physical-hardware success is claimed for the new shared reader.
 
 
-## Fixed and banked CROM window
 
-`platform/naomi/cart_rom.c` now adds a caller-buffer-backed CROM layer above the image reader:
+## Fixed CROM and bounded bank-page cache
 
-- Startup reads the complete 8 MiB fixed-CROM region into a caller-owned, 32-byte-aligned buffer. This is the resident region that upstream patches and the PPC fetch path expect.
-- Bank selection reads one 8 MiB window from the 64 MiB logical banked-CROM region into a second caller-owned aligned buffer.
-- Logical bank numbers 8–15 mirror 0–7, matching upstream's duplicated 128 MiB vector.
-- Selecting the already-resident bank avoids a redundant DMA. A failed refill invalidates the window so callers cannot mistake stale bytes for the requested bank.
-- The API allocates no memory and does not yet modify upstream Model 3 bus handlers. The caller must ensure the bank window is not observed while a synchronous refill is in progress.
+`platform/naomi/cart_rom.c` keeps the patched 8 MiB fixed-CROM region resident, but avoids an 8 MiB bank allocation:
 
-The host mock test writes a distinct signature at the start of each of the eight logical banks, exercises all banks, and confirms bank 15 mirrors bank 7. Naomi CI compiles and links the new object into the cartridge probe.
+- Banked CROM uses four caller-owned 64 KiB pages (256 KiB total).
+- Selecting logical bank 8–15 mirrors banks 0–7, matching upstream's duplicated 128 MiB vector.
+- The page lookup fills a missing page synchronously through the image reader and uses an LRU replacement policy.
+- Repeated reads within resident pages avoid further DMA. Changing banks invalidates the cache.
+- A returned page pointer is valid only until its cache slot is replaced or the bank changes. The eventual Model 3 bus-handler adapter must not retain it across calls.
 
-This is a storage primitive, not yet proof that an 8 MiB resident bank window fits alongside the complete Model 3 working set in Naomi's 32 MiB RAM. The memory-budget investigation remains a separate gate before connecting this to the board core.
+The host test writes distinct signatures for each bank, checks all eight logical banks, confirms bank-15 mirroring, exercises multiple page reads and rejects an out-of-range page. Naomi CI compiles and links this layer into the cartridge probe.
+
+This is a much smaller cache than a full 8 MiB window, but it introduces synchronous DMA on cache misses. Its performance under actual VF3 PPC access patterns has not yet been measured. It is not connected to the upstream bus handlers yet.
