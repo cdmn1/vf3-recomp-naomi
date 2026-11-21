@@ -10,7 +10,7 @@ endif
 
 TARGET = naomi_cart_read_probe.elf
 ROM = naomi_cart_read_probe-$(BUILD_VERSION).bin
-OBJS = main.o
+OBJS = main.o ../../platform/naomi/cart_dma.o
 NAOMIBINTOOL ?= $(KOS_BASE)/utils/naomibintool/naomibintool
 
 CFLAGS += -O2 -fno-fast-math
@@ -29,7 +29,10 @@ $(ROM): $(TARGET) $(NAOMIBINTOOL)
 
 include $(KOS_BASE)/Makefile.rules
 
+../../platform/naomi/cart_dma.o: ../../platform/naomi/cart_dma.c ../../platform/naomi/cart_dma.h
+	kos-cc -O2 -c $< -o $@
+
 clean:
-	-rm -f $(TARGET) $(ROM) $(OBJS)
+	-rm -f $(TARGET) $(ROM) main.o ../../platform/naomi/cart_dma.o
 
 .PHONY: all rom clean

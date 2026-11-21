@@ -10,6 +10,7 @@
 #include <dc/minifont.h>
 #include <dc/pvr.h>
 #include <stdint.h>
+#include "../../platform/naomi/cart_dma.h"
 #include <stdio.h>
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
@@ -19,15 +20,6 @@ KOS_INIT_FLAGS(INIT_DEFAULT);
 #define CART_ROM_OFFSETH (*(volatile uint16_t *)0xA05F7000u)
 #define CART_ROM_OFFSETL (*(volatile uint16_t *)0xA05F7004u)
 #define CART_ROM_DATA    (*(volatile uint16_t *)0xA05F7008u)
-#define CART_DMA_OFFSETH (*(volatile uint16_t *)0xA05F700Cu)
-#define CART_DMA_OFFSETL (*(volatile uint16_t *)0xA05F7010u)
-#define G1_GDSTAR        (*(volatile uint32_t *)0xA05F7404u)
-#define G1_GDLEN         (*(volatile uint32_t *)0xA05F7408u)
-#define G1_GDDIR         (*(volatile uint32_t *)0xA05F740Cu)
-#define G1_GDEN          (*(volatile uint32_t *)0xA05F7414u)
-#define G1_GDST          (*(volatile uint32_t *)0xA05F7418u)
-#define G1_GDSTARD       (*(volatile uint32_t *)0xA05F74F4u)
-#define G1_GDLEND        (*(volatile uint32_t *)0xA05F74F8u)
 
 static pvr_ptr_t font_texture;
 static const uint32_t offsets[] = {
@@ -134,53 +126,32 @@ static uint16_t expected_dma_word(uint32_t index) {
 /* Per-size elapsed times are rendered with each DMA result for easy capture. */
 static void run_dma_probe(void) {
     const uint32_t source_offset = 0x02400000u;
-    const uint64_t timeout_ms = 5000u;
+    const uint32_t timeout_ms = 5000u;
 
     for(int test = 0; test < DMA_TEST_COUNT; ++test) {
         dma_result_t *result = &dma_results[test];
         const uint32_t transfer_size = dma_sizes[test];
-        uint64_t start_ms;
+        naomi_cart_dma_result_t io_result;
+        int rc;
 
         result->attempted = 1;
-        if((G1_GDST & 1u) || (G1_GDEN & 1u)) {
-            result->attempted = 0;
-            break;
-        }
-
         for(uint32_t i = 0; i < transfer_size / 2u; ++i)
             dma_buffer[i] = 0xA5A5u;
-        dcache_inval_range((uintptr_t)dma_buffer, transfer_size);
-        CART_DMA_OFFSETL = (uint16_t)(source_offset & 0xFFFFu);
-        CART_DMA_OFFSETH = (uint16_t)((source_offset >> 16) & 0x7FFFu);
 
-        G1_GDSTAR = (uint32_t)((uintptr_t)dma_buffer & 0x1FFFFFE0u);
-        G1_GDLEN = transfer_size;
-        G1_GDDIR = 1u;
-        G1_GDEN = 1u;
-        start_ms = timer_ms_gettime64();
-        G1_GDST = 1u;
+        rc = naomi_cart_dma_read(source_offset, dma_buffer, transfer_size,
+                                 timeout_ms, &io_result);
+        result->timed_out = (rc == NAOMI_CART_DMA_TIMEOUT);
+        result->elapsed_ms = io_result.elapsed_ms;
+        result->transferred = io_result.transferred;
+        dma_last_status = io_result.last_status;
+        dma_last_count = io_result.last_count;
+        dma_last_end = io_result.last_end;
 
-        while(G1_GDST & 1u) {
-            if(timer_ms_gettime64() - start_ms >= timeout_ms) {
-                result->timed_out = 1;
-                G1_GDEN = 0u;
-                break;
-            }
-            thd_pass();
-        }
-
-        result->elapsed_ms = timer_ms_gettime64() - start_ms;
-        dma_last_status = G1_GDST;
-        result->transferred = G1_GDLEND;
-        dma_last_count = G1_GDLEND;
-        dma_last_end = G1_GDSTARD;
-        dcache_inval_range((uintptr_t)dma_buffer, transfer_size);
-
-        result->passed = !result->timed_out &&
-                         ((G1_GDST & 1u) == 0u) &&
-                         (result->transferred >= transfer_size);
         for(uint32_t i = 0; i < 16u; ++i)
             dma_words[i] = dma_buffer[i];
+
+        result->passed = (rc == NAOMI_CART_DMA_OK) &&
+                         (result->transferred == transfer_size);
         if(result->passed) {
             for(uint32_t i = 0; i < transfer_size / 2u; ++i) {
                 if(dma_buffer[i] != expected_dma_word(i)) {
@@ -192,8 +163,6 @@ static void run_dma_probe(void) {
                 }
             }
         }
-
-        G1_GDEN = 0u;
         if(!result->passed)
             break;
     }
