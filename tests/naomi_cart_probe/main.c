@@ -5,6 +5,8 @@
  * This is deliberately read-only and reports raw words on screen.
  */
 #include <kos.h>
+#include <kos/cache.h>
+#include <kos/timer.h>
 #include <dc/minifont.h>
 #include <dc/pvr.h>
 #include <stdint.h>
@@ -17,6 +19,15 @@ KOS_INIT_FLAGS(INIT_DEFAULT);
 #define CART_ROM_OFFSETH (*(volatile uint16_t *)0xA05F7000u)
 #define CART_ROM_OFFSETL (*(volatile uint16_t *)0xA05F7004u)
 #define CART_ROM_DATA    (*(volatile uint16_t *)0xA05F7008u)
+#define CART_DMA_OFFSETH (*(volatile uint16_t *)0xA05F700Cu)
+#define CART_DMA_OFFSETL (*(volatile uint16_t *)0xA05F7010u)
+#define G1_GDSTAR        (*(volatile uint32_t *)0xA05F7404u)
+#define G1_GDLEN         (*(volatile uint32_t *)0xA05F7408u)
+#define G1_GDDIR         (*(volatile uint32_t *)0xA05F740Cu)
+#define G1_GDEN          (*(volatile uint32_t *)0xA05F7414u)
+#define G1_GDST          (*(volatile uint32_t *)0xA05F7418u)
+#define G1_GDSTARD       (*(volatile uint32_t *)0xA05F74F4u)
+#define G1_GDLEND        (*(volatile uint32_t *)0xA05F74F8u)
 
 static pvr_ptr_t font_texture;
 static const uint32_t offsets[] = {
@@ -39,6 +50,13 @@ static uint16_t values[12][4];
 static uint16_t repeat_values[12][4];
 static int stable[12];
 static int marker_ok[12];
+static uint16_t dma_words[16] __attribute__((aligned(32)));
+static int dma_started;
+static int dma_completed;
+static int dma_marker_ok;
+static uint32_t dma_status;
+static uint32_t dma_count;
+static uint32_t dma_dest_end;
 
 static void font_init(void) {
     uint16_t *vram = (uint16_t *)font_texture;
@@ -81,6 +99,69 @@ static void read_words(uint32_t offset, uint16_t out[4]) {
     for(int i = 0; i < 4; ++i) out[i] = CART_ROM_DATA;
 }
 
+
+/*
+ * Read one 32-byte marker block through Naomi's cartridge-to-RAM G1 DMA path.
+ * The destination is a reserved SH-4 main-RAM buffer. This test is read-only
+ * with respect to the NetDIMM image.
+ */
+static void run_dma_probe(void) {
+    const uint32_t source_offset = 0x00100000u;
+    const uint32_t transfer_size = 32u;
+    const uint64_t timeout_ms = 5000u;
+    const uint64_t start_ms = timer_ms_gettime64();
+
+    for(int i = 0; i < 16; ++i)
+        dma_words[i] = 0xA5A5u;
+
+    /* Ensure no dirty/stale cache line can interfere with the DMA buffer. */
+    dcache_inval_range((uintptr_t)dma_words, transfer_size);
+
+    dma_status = G1_GDST;
+    if((G1_GDST & 1u) || (G1_GDEN & 1u)) {
+        dma_completed = 0;
+        dma_started = 0;
+        dma_count = G1_GDLEND;
+        dma_dest_end = G1_GDSTARD;
+        return;
+    }
+
+    /* Cartridge DMA source offset: 1 MiB, matching VF3PIO1! in this image. */
+    CART_DMA_OFFSETL = (uint16_t)(source_offset & 0xFFFFu);
+    CART_DMA_OFFSETH = (uint16_t)((source_offset >> 16) & 0x7FFFu);
+
+    /* G1 DMA destination is a root-bus address, not a cached SH-4 pointer. */
+    G1_GDSTAR = (uint32_t)((uintptr_t)dma_words & 0x1FFFFFE0u);
+    G1_GDLEN = transfer_size;
+    G1_GDDIR = 1u; /* cartridge/GD-ROM source -> SH-4 system memory */
+    G1_GDEN = 1u;
+    G1_GDST = 1u;
+    dma_started = 1;
+
+    while(G1_GDST & 1u) {
+        if(timer_ms_gettime64() - start_ms >= timeout_ms) {
+            G1_GDEN = 0u; /* abort rather than wait forever */
+            break;
+        }
+        thd_pass();
+    }
+
+    dma_status = G1_GDST;
+    dma_count = G1_GDLEND;
+    dma_dest_end = G1_GDSTARD;
+    dma_completed = ((dma_status & 1u) == 0u) && (dma_count >= transfer_size);
+
+    /* DMA wrote memory behind the CPU cache; discard any cached copy. */
+    dcache_inval_range((uintptr_t)dma_words, transfer_size);
+
+    dma_marker_ok = dma_completed;
+    for(int i = 0; i < 4; ++i)
+        if(dma_words[i] != expected_markers[0][i])
+            dma_marker_ok = 0;
+
+    G1_GDEN = 0u;
+}
+
 static void draw_screen(void) {
     char line[96];
     pvr_wait_ready(); pvr_scene_begin(); pvr_list_begin(PVR_LIST_TR_POLY);
@@ -103,8 +184,13 @@ static void draw_screen(void) {
             stable[i] ? "MATCH" : "MISMATCH", check);
         draw_text(24, 130 + i * 24, line);
     }
-    draw_text(24, 430, "PIO AUTO-INCREMENT: 16-BIT WORDS");
-    draw_text(24, 454, "MARKERS THROUGH 63 MiB; EOF AT 64 MiB");
+    snprintf(line, sizeof(line), "DMA 1MiB: %04x %04x %04x %04x",
+        dma_words[0], dma_words[1], dma_words[2], dma_words[3]);
+    draw_text(24, 430, line);
+    snprintf(line, sizeof(line), "G1 DMA: %s  END=%08lx LEN=%lu",
+        dma_marker_ok ? "MARKER OK" : (dma_started ? "FAIL/TIMEOUT" : "NOT RUN"),
+        (unsigned long)dma_dest_end, (unsigned long)dma_count);
+    draw_text(24, 454, line);
     pvr_list_finish(); pvr_scene_finish();
 }
 
@@ -126,6 +212,7 @@ int main(void) {
                 if(values[i][j] != 0xFFFFu) marker_ok[i] = 0;
         }
     }
+    run_dma_probe();
     pvr_init_defaults(); pvr_set_bg_color(0.02f, 0.06f, 0.12f);
     font_texture = pvr_mem_malloc(256 * 256 * 2);
     if(!font_texture) for(;;) thd_sleep(1000);
