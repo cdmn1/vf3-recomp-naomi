@@ -70,7 +70,7 @@ static uint32_t dma_last_end;
 static uint32_t dma_mismatch_index = 0xFFFFFFFFu;
 static uint16_t dma_mismatch_actual;
 static uint16_t dma_mismatch_expected;
-static uint16_t dma_first_words[4];
+static uint16_t dma_words[16];
 
 static void font_init(void) {
     uint16_t *vram = (uint16_t *)font_texture;
@@ -124,7 +124,10 @@ static uint16_t expected_dma_word(uint32_t index) {
     if(index == 1) return 0x5033u;
     if(index == 2) return 0x4f49u;
     if(index == 3) return 0x2131u;
-    return (uint16_t)(0xA500u ^ ((index * 73u + (index >> 5)) & 0xFFFFu));
+    /* The image stores generated words big-endian; SH-4 uint16_t loads
+       interpret the same two bytes little-endian after DMA. */
+    uint16_t word = (uint16_t)(0xA500u ^ ((index * 73u + (index >> 5)) & 0xFFFFu));
+    return (uint16_t)((word << 8) | (word >> 8));
 }
 
 /* Per-size elapsed times are rendered with each DMA result for easy capture. */
@@ -177,7 +180,7 @@ static void run_dma_probe(void) {
                          (result->transferred >= transfer_size);
         if(result->passed) {
             for(uint32_t i = 0; i < transfer_size / 2u; ++i) {
-                if(i < 4u) dma_first_words[i] = dma_buffer[i];
+                if(i < 16u) dma_words[i] = dma_buffer[i];
                 if(dma_buffer[i] != expected_dma_word(i)) {
                     result->passed = 0;
                     dma_mismatch_index = i;
@@ -187,7 +190,7 @@ static void run_dma_probe(void) {
                 }
             }
         } else {
-            for(uint32_t i = 0; i < 4u; ++i) dma_first_words[i] = dma_buffer[i];
+            for(uint32_t i = 0; i < 16u; ++i) dma_words[i] = dma_buffer[i];
         }
 
         G1_GDEN = 0u;
@@ -201,7 +204,7 @@ static const char *dma_status_label(int index) {
     return dma_results[index].passed ? "OK" : "FAIL";
 }
 
-static void draw_screen(void) {
+static void draw_pio_screen(void) {
     char line[96];
     pvr_wait_ready(); pvr_scene_begin(); pvr_list_begin(PVR_LIST_TR_POLY);
     draw_text(24, 20, "NAOMI CARTRIDGE PIO READ PROBE");
@@ -223,31 +226,66 @@ static void draw_screen(void) {
             stable[i] ? "MATCH" : "MISMATCH", check);
         draw_text(24, 130 + i * 24, line);
     }
-    snprintf(line, sizeof(line), "32:%s/%llums 256:%s/%llums 4K:%s/%llums",
-        dma_status_label(0), (unsigned long long)dma_results[0].elapsed_ms,
-        dma_status_label(1), (unsigned long long)dma_results[1].elapsed_ms,
-        dma_status_label(2), (unsigned long long)dma_results[2].elapsed_ms);
-    draw_text(24, 430, line);
-    if(dma_results[0].attempted && !dma_results[0].passed) {
-        snprintf(line, sizeof(line), "DMA DBG S=%08lx C=%lu E=%08lx",
-            (unsigned long)dma_last_status, (unsigned long)dma_last_count,
-            (unsigned long)dma_last_end);
-        draw_text(24, 404, line);
-        snprintf(line, sizeof(line), "DMA W0-3 %04x %04x %04x %04x",
-            dma_first_words[0], dma_first_words[1],
-            dma_first_words[2], dma_first_words[3]);
-        draw_text(24, 428, line);
-        snprintf(line, sizeof(line), "DMA BAD I=%lu GOT=%04x EXP=%04x",
+    draw_text(24, 430, "DMA DETAILS ON NEXT SCREEN");
+    pvr_list_finish(); pvr_scene_finish();
+}
+
+static void draw_dma_screen(void) {
+    char line[96];
+    pvr_wait_ready(); pvr_scene_begin(); pvr_list_begin(PVR_LIST_TR_POLY);
+    draw_text(24, 20, "NAOMI CARTRIDGE DMA DIAGNOSTIC");
+    snprintf(line, sizeof(line), "32B %s  STATUS=%08lx COUNT=%lu",
+        dma_status_label(0), (unsigned long)dma_last_status,
+        (unsigned long)dma_last_count);
+    draw_text(24, 52, line);
+    snprintf(line, sizeof(line), "END=%08lx  FIRST MISMATCH=%s",
+        (unsigned long)dma_last_end,
+        dma_mismatch_index == 0xFFFFFFFFu ? "NONE" : "SEE BELOW");
+    draw_text(24, 84, line);
+    if(dma_mismatch_index != 0xFFFFFFFFu) {
+        snprintf(line, sizeof(line), "INDEX=%lu GOT=%04x EXPECTED=%04x",
             (unsigned long)dma_mismatch_index, dma_mismatch_actual,
             dma_mismatch_expected);
-        draw_text(24, 452, line);
+        draw_text(24, 116, line);
     } else {
-        snprintf(line, sizeof(line), "64K:%s/%llums 256K:%s/%llums 1M:%s/%llums",
-            dma_status_label(3), (unsigned long long)dma_results[3].elapsed_ms,
-            dma_status_label(4), (unsigned long long)dma_results[4].elapsed_ms,
-            dma_status_label(5), (unsigned long long)dma_results[5].elapsed_ms);
-        draw_text(24, 454, line);
+        draw_text(24, 116, "NO WORD MISMATCH IN ATTEMPTED TRANSFERS");
     }
+    draw_text(24, 160, "GOT  00-03");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        dma_words[0], dma_words[1], dma_words[2], dma_words[3]);
+    draw_text(180, 160, line);
+    draw_text(24, 184, "GOT  04-07");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        dma_words[4], dma_words[5], dma_words[6], dma_words[7]);
+    draw_text(180, 184, line);
+    draw_text(24, 208, "GOT  08-11");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        dma_words[8], dma_words[9], dma_words[10], dma_words[11]);
+    draw_text(180, 208, line);
+    draw_text(24, 232, "GOT  12-15");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        dma_words[12], dma_words[13], dma_words[14], dma_words[15]);
+    draw_text(180, 232, line);
+    draw_text(24, 280, "EXPECTED WORDS 00-03");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        expected_dma_word(0), expected_dma_word(1),
+        expected_dma_word(2), expected_dma_word(3));
+    draw_text(24, 304, line);
+    draw_text(24, 328, "EXPECTED WORDS 04-07");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        expected_dma_word(4), expected_dma_word(5),
+        expected_dma_word(6), expected_dma_word(7));
+    draw_text(24, 352, line);
+    draw_text(24, 376, "EXPECTED WORDS 08-11");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        expected_dma_word(8), expected_dma_word(9),
+        expected_dma_word(10), expected_dma_word(11));
+    draw_text(24, 400, line);
+    draw_text(24, 424, "EXPECTED WORDS 12-15");
+    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
+        expected_dma_word(12), expected_dma_word(13),
+        expected_dma_word(14), expected_dma_word(15));
+    draw_text(24, 448, line);
     pvr_list_finish(); pvr_scene_finish();
 }
 
@@ -274,6 +312,10 @@ int main(void) {
     font_texture = pvr_mem_malloc(256 * 256 * 2);
     if(!font_texture) for(;;) thd_sleep(1000);
     font_init();
-    for(;;) { draw_screen(); thd_sleep(16); }
+    for(;;) {
+        int dma_page = ((timer_ms_gettime64() / 3000u) & 1u) != 0u;
+        if(dma_page) draw_dma_screen(); else draw_pio_screen();
+        thd_sleep(16);
+    }
     return 0;
 }
