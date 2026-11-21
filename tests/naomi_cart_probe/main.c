@@ -67,6 +67,10 @@ static dma_result_t dma_results[DMA_TEST_COUNT];
 static uint32_t dma_last_status;
 static uint32_t dma_last_count;
 static uint32_t dma_last_end;
+static uint32_t dma_mismatch_index = 0xFFFFFFFFu;
+static uint16_t dma_mismatch_actual;
+static uint16_t dma_mismatch_expected;
+static uint16_t dma_first_words[4];
 
 static void font_init(void) {
     uint16_t *vram = (uint16_t *)font_texture;
@@ -173,11 +177,17 @@ static void run_dma_probe(void) {
                          (result->transferred >= transfer_size);
         if(result->passed) {
             for(uint32_t i = 0; i < transfer_size / 2u; ++i) {
+                if(i < 4u) dma_first_words[i] = dma_buffer[i];
                 if(dma_buffer[i] != expected_dma_word(i)) {
                     result->passed = 0;
+                    dma_mismatch_index = i;
+                    dma_mismatch_actual = dma_buffer[i];
+                    dma_mismatch_expected = expected_dma_word(i);
                     break;
                 }
             }
+        } else {
+            for(uint32_t i = 0; i < 4u; ++i) dma_first_words[i] = dma_buffer[i];
         }
 
         G1_GDEN = 0u;
@@ -222,7 +232,15 @@ static void draw_screen(void) {
         snprintf(line, sizeof(line), "DMA DBG S=%08lx C=%lu E=%08lx",
             (unsigned long)dma_last_status, (unsigned long)dma_last_count,
             (unsigned long)dma_last_end);
-        draw_text(24, 454, line);
+        draw_text(24, 404, line);
+        snprintf(line, sizeof(line), "DMA W0-3 %04x %04x %04x %04x",
+            dma_first_words[0], dma_first_words[1],
+            dma_first_words[2], dma_first_words[3]);
+        draw_text(24, 428, line);
+        snprintf(line, sizeof(line), "DMA BAD I=%lu GOT=%04x EXP=%04x",
+            (unsigned long)dma_mismatch_index, dma_mismatch_actual,
+            dma_mismatch_expected);
+        draw_text(24, 452, line);
     } else {
         snprintf(line, sizeof(line), "64K:%s/%llums 256K:%s/%llums 1M:%s/%llums",
             dma_status_label(3), (unsigned long long)dma_results[3].elapsed_ms,
