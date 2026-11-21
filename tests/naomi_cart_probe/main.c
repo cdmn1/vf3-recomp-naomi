@@ -312,64 +312,6 @@ static void draw_pio_screen(void) {
     pvr_list_finish(); pvr_scene_finish();
 }
 
-static void draw_dma_screen(void) {
-    char line[96];
-    pvr_wait_ready(); pvr_scene_begin(); pvr_list_begin(PVR_LIST_TR_POLY);
-    draw_text(24, 20, "NAOMI CARTRIDGE DMA DIAGNOSTIC");
-    snprintf(line, sizeof(line), "32B %s  STATUS=%08lx COUNT=%lu",
-        dma_status_label(0), (unsigned long)dma_last_status,
-        (unsigned long)dma_last_count);
-    draw_text(24, 52, line);
-    snprintf(line, sizeof(line), "END=%08lx  FIRST MISMATCH=%s",
-        (unsigned long)dma_last_end,
-        dma_mismatch_index == 0xFFFFFFFFu ? "NONE" : "SEE BELOW");
-    draw_text(24, 84, line);
-    if(dma_mismatch_index != 0xFFFFFFFFu) {
-        snprintf(line, sizeof(line), "INDEX=%lu GOT=%04x EXPECTED=%04x",
-            (unsigned long)dma_mismatch_index, dma_mismatch_actual,
-            dma_mismatch_expected);
-        draw_text(24, 116, line);
-    } else {
-        draw_text(24, 116, "NO WORD MISMATCH IN ATTEMPTED TRANSFERS");
-    }
-    draw_text(24, 160, "GOT  00-03");
-    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
-        dma_words[0], dma_words[1], dma_words[2], dma_words[3]);
-    draw_text(180, 160, line);
-    draw_text(24, 184, "GOT  04-07");
-    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
-        dma_words[4], dma_words[5], dma_words[6], dma_words[7]);
-    draw_text(180, 184, line);
-    draw_text(24, 208, "GOT  08-11");
-    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
-        dma_words[8], dma_words[9], dma_words[10], dma_words[11]);
-    draw_text(180, 208, line);
-    draw_text(24, 232, "GOT  12-15");
-    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
-        dma_words[12], dma_words[13], dma_words[14], dma_words[15]);
-    draw_text(180, 232, line);
-    draw_text(24, 280, "EXPECTED WORDS 00-03");
-    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
-        expected_dma_word(0), expected_dma_word(1),
-        expected_dma_word(2), expected_dma_word(3));
-    draw_text(24, 304, line);
-    draw_text(24, 328, "EXPECTED WORDS 04-07");
-    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
-        expected_dma_word(4), expected_dma_word(5),
-        expected_dma_word(6), expected_dma_word(7));
-    draw_text(24, 352, line);
-    draw_text(24, 376, "EXPECTED WORDS 08-11");
-    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
-        expected_dma_word(8), expected_dma_word(9),
-        expected_dma_word(10), expected_dma_word(11));
-    draw_text(24, 400, line);
-    draw_text(24, 424, "EXPECTED WORDS 12-15");
-    snprintf(line, sizeof(line), "%04x %04x %04x %04x",
-        expected_dma_word(12), expected_dma_word(13),
-        expected_dma_word(14), expected_dma_word(15));
-    draw_text(24, 448, line);
-    pvr_list_finish(); pvr_scene_finish();
-}
 
 int main(void) {
     for(int i = 0; i < 12; ++i) {
