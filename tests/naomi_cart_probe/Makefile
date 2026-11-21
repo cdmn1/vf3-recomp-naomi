@@ -2,7 +2,7 @@ ifeq ($(KOS_SUBARCH),)
 $(error KOS_SUBARCH is unset. Source the Naomi KOS environ.sh first)
 endif
 ifneq ($(KOS_SUBARCH),naomi)
-$(error Wrong KOS target '$(KOS_SUBARCH)'). This target requires KOS_SUBARCH=naomi)
+$(error Wrong KOS target '$(KOS_SUBARCH)'. This target requires KOS_SUBARCH=naomi)
 endif
 ifeq ($(KOS_BASE),)
 $(error KOS_BASE is unset. Source the Naomi KOS environ.sh first)
