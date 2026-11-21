@@ -97,3 +97,18 @@ The next probe build keeps the executable segment and Naomi header intact, then 
 | 0x00400000 | End of image; expected PIO value is 0xFFFF |
 
 The on-screen probe compares the returned words against these known markers, checks repeated-read stability, and labels the end-of-image read separately. A successful marker read demonstrates that PIO can access appended NetDIMM image data at that offset; it is stronger evidence than repeatability alone. This still does not establish the full 64/128 MiB ranges needed by VROM and banked CROM, which require a later large-image test.
+
+
+## 7. Real Naomi result: v59 marker test passed
+
+The v59 probe was run on physical Naomi hardware. It returned the expected marker words at 1, 2, and 3 MiB, all repeated reads matched, and the 4 MiB end-of-image read returned 0xFFFF. The PPC interpreter smoke test and SH-4 FPU probe also passed in the same test session.
+
+This proves that the PIO path can read appended NetDIMM image data beyond the executable segment at those tested offsets. It does not yet establish the maximum address, sustained throughput, or full-size random/sequential access performance.
+
+## 8. v60: extend PIO address-range validation to 64 MiB
+
+The next probe image is padded to exactly 64 MiB. It retains the executable segment and places unique 8-byte markers at 1, 2, 3, 4, 8, 16, 32, and 63 MiB. It checks repeated reads at each marker and verifies 0xFFFF at the 64 MiB end boundary.
+
+This tests a much wider portion of the PIO address range while remaining below the common 256 MiB and 512 MiB Naomi NetDIMM memory configurations. Capacity variants are documented by NetDIMM references; the actual installed capacity must still be respected. The PIO high-offset register uses a 15-bit offset field in the Flycast hardware model, which is consistent with a 31-bit byte offset, but physical range and timing remain subject to hardware validation.
+
+The 64 MiB probe is still a sparse logical image with only a few marker bytes populated. It tests addressability, not bulk transfer speed or the cost of loading a full 64 MiB image.

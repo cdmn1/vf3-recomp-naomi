@@ -243,21 +243,20 @@ jobs:
           BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/naomi_cart_probe rom
           test -s "tests/naomi_cart_probe/$CART_ROM"
           # Keep the Naomi executable segment unchanged, but extend the ROM
-          # image with known bytes so PIO can be tested beyond the small ELF.
+          # image to 64 MiB with known markers throughout the image.
           python3 - "tests/naomi_cart_probe/$CART_ROM" <<'PY'
           import pathlib, sys
           path = pathlib.Path(sys.argv[1])
           with path.open("r+b") as image:
-              image.truncate(0x00400000)
-              for offset, marker in (
-                  (0x00100000, b"VF3PIO1!"),
-                  (0x00200000, b"VF3PIO2!"),
-                  (0x00300000, b"VF3PIO3!"),
-              ):
+              image.truncate(0x04000000)
+              for index, offset in enumerate((
+                  0x00100000, 0x00200000, 0x00300000, 0x00400000,
+                  0x00800000, 0x01000000, 0x02000000, 0x03F00000,
+              ), 1):
                   image.seek(offset)
-                  image.write(marker)
+                  image.write(("VF3PIO%d!" % index).encode("ascii"))
           PY
-          test "$(stat -c '%s' "tests/naomi_cart_probe/$CART_ROM")" -eq 4194304
+          test "$(stat -c '%s' "tests/naomi_cart_probe/$CART_ROM")" -eq 67108864
           cp "tests/naomi_cart_probe/$CART_ROM" build-artifacts/
 
       - name: Package SH-4 FPU probe independently

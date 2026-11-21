@@ -21,17 +21,24 @@ KOS_INIT_FLAGS(INIT_DEFAULT);
 static pvr_ptr_t font_texture;
 static const uint32_t offsets[] = {
     0x00000000u, 0x00000100u, 0x00010000u,
-    0x00100000u, 0x00200000u, 0x00300000u, 0x00400000u
+    0x00100000u, 0x00200000u, 0x00300000u,
+    0x00400000u, 0x00800000u, 0x01000000u,
+    0x02000000u, 0x03F00000u, 0x04000000u
 };
-static const uint16_t expected_markers[3][4] = {
+static const uint16_t expected_markers[8][4] = {
     { 0x4656u, 0x5033u, 0x4f49u, 0x2131u }, /* VF3PIO1! */
     { 0x4656u, 0x5033u, 0x4f49u, 0x2132u }, /* VF3PIO2! */
-    { 0x4656u, 0x5033u, 0x4f49u, 0x2133u }  /* VF3PIO3! */
+    { 0x4656u, 0x5033u, 0x4f49u, 0x2133u }, /* VF3PIO3! */
+    { 0x4656u, 0x5033u, 0x4f49u, 0x2134u }, /* VF3PIO4! */
+    { 0x4656u, 0x5033u, 0x4f49u, 0x2135u }, /* VF3PIO5! */
+    { 0x4656u, 0x5033u, 0x4f49u, 0x2136u }, /* VF3PIO6! */
+    { 0x4656u, 0x5033u, 0x4f49u, 0x2137u }, /* VF3PIO7! */
+    { 0x4656u, 0x5033u, 0x4f49u, 0x2138u }  /* VF3PIO8! */
 };
-static uint16_t values[7][4];
-static uint16_t repeat_values[7][4];
-static int stable[7];
-static int marker_ok[7];
+static uint16_t values[12][4];
+static uint16_t repeat_values[12][4];
+static int stable[12];
+static int marker_ok[12];
 
 static void font_init(void) {
     uint16_t *vram = (uint16_t *)font_texture;
@@ -80,40 +87,40 @@ static void draw_screen(void) {
     draw_text(24, 20, "NAOMI CARTRIDGE PIO READ PROBE");
     draw_text(24, 52, "READ ONLY - NETDIMM/CART ACCESS");
     draw_text(24, 92, "OFFSET       WORD0 WORD1 WORD2 WORD3");
-    for(int i = 0; i < 7; ++i) {
+    for(int i = 0; i < 12; ++i) {
         const char *check;
         snprintf(line, sizeof(line), "%08lx %04x  %04x  %04x  %04x",
             (unsigned long)offsets[i], values[i][0], values[i][1],
             values[i][2], values[i][3]);
-        draw_text(24, 132 + i * 32, line);
-        if(i >= 3 && i <= 5)
+        draw_text(24, 120 + i * 26, line);
+        if(i >= 3 && i <= 10)
             check = marker_ok[i] ? "MARKER OK" : "BAD MARKER";
-        else if(i == 6)
+        else if(i == 11)
             check = marker_ok[i] ? "EOF FFFF" : "NOT FFFF";
         else
             check = "DATA SAMPLE";
         snprintf(line, sizeof(line), "REPEAT: %s  %s",
             stable[i] ? "MATCH" : "MISMATCH", check);
-        draw_text(24, 148 + i * 32, line);
+        draw_text(24, 134 + i * 26, line);
     }
-    draw_text(24, 388, "PIO AUTO-INCREMENT: 16-BIT WORDS");
-    draw_text(24, 420, "MARKERS AT 1/2/3 MiB; EOF AT 4 MiB");
+    draw_text(24, 444, "PIO AUTO-INCREMENT: 16-BIT WORDS");
+    draw_text(24, 468, "MARKERS THROUGH 63 MiB; EOF AT 64 MiB");
     pvr_list_finish(); pvr_scene_finish();
 }
 
 int main(void) {
-    for(int i = 0; i < 7; ++i) {
+    for(int i = 0; i < 12; ++i) {
         read_words(offsets[i], values[i]);
         read_words(offsets[i], repeat_values[i]);
         stable[i] = 1;
         for(int j = 0; j < 4; ++j)
             if(values[i][j] != repeat_values[i][j]) stable[i] = 0;
-        if(i >= 3 && i <= 5) {
+        if(i >= 3 && i <= 10) {
             marker_ok[i] = 1;
             for(int j = 0; j < 4; ++j)
                 if(values[i][j] != expected_markers[i - 3][j]) marker_ok[i] = 0;
         }
-        else if(i == 6) {
+        else if(i == 11) {
             marker_ok[i] = 1;
             for(int j = 0; j < 4; ++j)
                 if(values[i][j] != 0xFFFFu) marker_ok[i] = 0;
