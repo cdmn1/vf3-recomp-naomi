@@ -105,9 +105,9 @@ The v59 probe was run on physical Naomi hardware. It returned the expected marke
 
 This proves that the PIO path can read appended NetDIMM image data beyond the executable segment at those tested offsets. It does not yet establish the maximum address, sustained throughput, or full-size random/sequential access performance.
 
-## 8. v60: extend PIO address-range validation to 64 MiB
+## 8. v60: 64 MiB PIO address-range probe (CI build passed)
 
-The next probe image is padded to exactly 64 MiB. It retains the executable segment and places unique 8-byte markers at 1, 2, 3, 4, 8, 16, 32, and 63 MiB. It checks repeated reads at each marker and verifies 0xFFFF at the 64 MiB end boundary.
+The v60 probe image was built and packaged successfully by CI. It is padded to exactly 64 MiB. It retains the executable segment and places unique 8-byte markers at 1, 2, 3, 4, 8, 16, 32, and 63 MiB. It checks repeated reads at each marker and verifies 0xFFFF at the 64 MiB end boundary.
 
 This tests a much wider portion of the PIO address range while remaining below the common 256 MiB and 512 MiB Naomi NetDIMM memory configurations. Capacity variants are documented by NetDIMM references; the actual installed capacity must still be respected. The PIO high-offset register uses a 15-bit offset field in the Flycast hardware model, which is consistent with a 31-bit byte offset, but physical range and timing remain subject to hardware validation.
 
