@@ -172,7 +172,7 @@ static void run_dma_probe(void) {
         }
 
         G1_GDEN = 0u;
-        if(result->timed_out)
+        if(!result->passed)
             break;
     }
 }
@@ -204,13 +204,15 @@ static void draw_screen(void) {
             stable[i] ? "MATCH" : "MISMATCH", check);
         draw_text(24, 130 + i * 24, line);
     }
-    snprintf(line, sizeof(line), "DMA 32:%s 256:%s 4K:%s 64K:%s",
-        dma_status_label(0), dma_status_label(1),
-        dma_status_label(2), dma_status_label(3));
+    snprintf(line, sizeof(line), "32:%s/%llums 256:%s/%llums 4K:%s/%llums",
+        dma_status_label(0), (unsigned long long)dma_results[0].elapsed_ms,
+        dma_status_label(1), (unsigned long long)dma_results[1].elapsed_ms,
+        dma_status_label(2), (unsigned long long)dma_results[2].elapsed_ms);
     draw_text(24, 430, line);
-    snprintf(line, sizeof(line), "DMA 256K:%s 1M:%s 1M:%llums",
-        dma_status_label(4), dma_status_label(5),
-        (unsigned long long)dma_results[5].elapsed_ms);
+    snprintf(line, sizeof(line), "64K:%s/%llums 256K:%s/%llums 1M:%s/%llums",
+        dma_status_label(3), (unsigned long long)dma_results[3].elapsed_ms,
+        dma_status_label(4), (unsigned long long)dma_results[4].elapsed_ms,
+        dma_status_label(5), (unsigned long long)dma_results[5].elapsed_ms);
     draw_text(24, 454, line);
     pvr_list_finish(); pvr_scene_finish();
 }
