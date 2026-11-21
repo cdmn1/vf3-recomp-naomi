@@ -37,3 +37,18 @@ This is not yet connected to the Model 3 board core. It does not yet:
 - arbitrate cartridge reads between concurrent clients.
 
 The next porting step is to integrate the reader with the upstream Model 3 memory paths while solving the Naomi 32 MiB main-RAM budget. No physical-hardware success is claimed for the new shared reader.
+
+
+## Fixed and banked CROM window
+
+`platform/naomi/cart_rom.c` now adds a caller-buffer-backed CROM layer above the image reader:
+
+- Startup reads the complete 8 MiB fixed-CROM region into a caller-owned, 32-byte-aligned buffer. This is the resident region that upstream patches and the PPC fetch path expect.
+- Bank selection reads one 8 MiB window from the 64 MiB logical banked-CROM region into a second caller-owned aligned buffer.
+- Logical bank numbers 8–15 mirror 0–7, matching upstream's duplicated 128 MiB vector.
+- Selecting the already-resident bank avoids a redundant DMA. A failed refill invalidates the window so callers cannot mistake stale bytes for the requested bank.
+- The API allocates no memory and does not yet modify upstream Model 3 bus handlers. The caller must ensure the bank window is not observed while a synchronous refill is in progress.
+
+The host mock test writes a distinct signature at the start of each of the eight logical banks, exercises all banks, and confirms bank 15 mirrors bank 7. Naomi CI compiles and links the new object into the cartridge probe.
+
+This is a storage primitive, not yet proof that an 8 MiB resident bank window fits alongside the complete Model 3 working set in Naomi's 32 MiB RAM. The memory-budget investigation remains a separate gate before connecting this to the board core.
