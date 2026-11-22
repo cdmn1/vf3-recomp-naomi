@@ -46,7 +46,7 @@ The next porting step is to integrate the reader with the upstream Model 3 memor
 - Selecting logical bank 8–15 mirrors banks 0–7, matching upstream's duplicated 128 MiB vector.
 - The page lookup fills a missing page synchronously through the image reader and uses an LRU replacement policy.
 - Repeated reads within resident pages avoid further DMA. Changing banks invalidates the cache.
-- A returned page pointer is valid only until its cache slot is replaced or the bank changes. The eventual Model 3 bus-handler adapter must not retain it across calls.
+- A returned page pointer is valid only until its cache slot is replaced or the bank changes. The Model 3 bus-handler adapter must not retain it across calls.
 
 The host test writes distinct signatures for each bank, checks all eight logical banks, confirms bank-15 mirroring, exercises multiple page reads and rejects an out-of-range page. Naomi CI compiles and links this layer into the cartridge probe.
 
@@ -56,4 +56,4 @@ The pinned upstream `Model3::r3d_texture_port()` reads a 24-bit word address, ob
 
 `platform/naomi/cart_vrom.c` implements that operation against the packed single-copy 32 MiB VROM region. It uses a caller-owned 64 KiB scratch buffer, aligned synchronous DMA reads, preserves word order, collapses the duplicated upper half onto the same 32 MiB data, and respects the remaining FIFO capacity. The sink callback receives words synchronously; it must append or consume each word before returning and must not retain the scratch pointer.
 
-Host tests cover the 24-bit wrap from word 0xFFFFFF to word zero, exact word sequence, the upstream length calculation, and FIFO-full truncation. This is a tested streaming primitive, not yet wired into the upstream Real3D handler. It has not been measured on physical hardware.
+Host tests cover the 24-bit wrap from word 0xFFFFFF to word zero, exact word sequence, the upstream length calculation, and FIFO-full truncation. The pinned upstream Model 3 texture-port handler is patched in the Naomi build to call a C++ bridge, which streams into the existing 1 MiB texture FIFO. The image binding must still be supplied by the Naomi startup/image-mount path; that loader is not yet implemented. This has not been measured on physical hardware.
