@@ -20,19 +20,21 @@ NAOMIBINTOOL ?= $(KOS_BASE)/utils/naomibintool/naomibintool
 
 CXXFLAGS += -std=gnu++17 -O2
 CPPFLAGS += -I$(VF3_RECOMP_DIR)/src/ppc
+CPPFLAGS += -I$(VF3_RECOMP_DIR)/src/machine
+CPPFLAGS += -I$(VF3_RECOMP_DIR)/src/video
 CPPFLAGS += -I../../platform/naomi
 CPPFLAGS += -I$(SOFTFLOAT_DIR)/source/include -I$(SOFTFLOAT_DIR)/source/8086-SSE
 
 all: $(TARGET)
 rom: $(ROM)
 
-# Compile the upstream Model 3 core and Naomi ROM mount/streaming adapters
-# without linking or allocating the large emulated memory regions.
-model3-compile: model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o
+# Compile the Naomi board core, NetDIMM ROM path and CPU-side scene preparation.
+# The PVR renderer consumes Raster::prepare output; no CPU pixel/depth buffers are allocated.
+model3-compile: model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o r3d_scene.o r3d_raster.o
 
 model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h patch_model3_naomi.py ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/vf3_image.h ../../platform/naomi/naomi_pvr_vector.h
 	python3 patch_model3_naomi.py $(VF3_RECOMP_DIR)/src/machine/model3.cpp
-	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -I$(VF3_RECOMP_DIR)/src/machine -c $< -o $@
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
 
 cart_vrom_bridge.o: ../../platform/naomi/cart_vrom_bridge.cpp ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/cart_vrom.h ../../platform/naomi/cart_rom.h
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
@@ -42,6 +44,12 @@ vf3_image.o: ../../platform/naomi/vf3_image.c ../../platform/naomi/vf3_image.h .
 
 vf3_image_runtime.o: ../../platform/naomi/vf3_image_runtime.cpp ../../platform/naomi/vf3_image.h
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+
+r3d_scene.o: $(VF3_RECOMP_DIR)/src/video/r3d_scene.cpp $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/video/parallel.h model3.o
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
+
+r3d_raster.o: $(VF3_RECOMP_DIR)/src/video/r3d_raster.cpp $(VF3_RECOMP_DIR)/src/video/r3d_raster.h $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/video/parallel.h model3.o
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
 
 ppc.o: $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp $(VF3_RECOMP_DIR)/src/ppc/ppc.h patch_ppc_softfloat.py
 	python3 patch_ppc_softfloat.py $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp
@@ -59,6 +67,6 @@ $(ROM): $(TARGET) $(NAOMIBINTOOL)
 include $(KOS_BASE)/Makefile.rules
 
 clean:
-	-rm -f $(TARGET) $(ROM) $(OBJS) model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o
+	-rm -f $(TARGET) $(ROM) $(OBJS) model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o r3d_scene.o r3d_raster.o
 
 .PHONY: all rom model3-compile clean

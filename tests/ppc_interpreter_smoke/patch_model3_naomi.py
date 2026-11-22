@@ -312,3 +312,77 @@ if new_texture_field not in header:
     header = header.replace(old_texture_field, new_texture_field, 1)
 
 header_path.write_text(header)
+
+# The Naomi SH-4 runs the scene preparation serially. Keep the portable helpers,
+# but do not pull std::thread/pthread workers into the console build.
+parallel_path = path.parent.parent / "video" / "parallel.h"
+parallel = parallel_path.read_text()
+if "#ifdef VF3_NAOMI" not in parallel:
+    parallel_body = parallel.replace("#pragma once", "", 1).lstrip()
+    parallel_stub = """#pragma once
+#ifdef VF3_NAOMI
+#include <functional>
+inline void parallel_rows(int n, const std::function<void(int, int)> &f, int = 1)
+{
+    if (n > 0) f(0, n);
+}
+inline void parallel_tasks(int n, const std::function<void(int)> &f)
+{
+    for (int i = 0; i < n; ++i) f(i);
+}
+class background_job
+{
+public:
+    void start(std::function<void()> f) { f(); }
+    void wait() {}
+};
+#else
+""" + parallel_body + "\n#endif\n"
+    parallel_path.write_text(parallel_stub)
+
+raster_h_path = path.parent.parent / "video" / "r3d_raster.h"
+raster_h = raster_h_path.read_text()
+old_resize_decl = "\tvoid resize(int width, int height, int game_width = 0);"
+new_resize_decl = old_resize_decl + "\n\t// Set geometry-preparation dimensions without allocating CPU colour/depth buffers.\n\tvoid resize_geometry_only(int width, int height, int game_width = 0);"
+if "resize_geometry_only" not in raster_h:
+    if raster_h.count(old_resize_decl) != 1:
+        raise SystemExit("expected exactly one Raster::resize declaration")
+    raster_h = raster_h.replace(old_resize_decl, new_resize_decl, 1)
+raster_h_path.write_text(raster_h)
+
+raster_cpp_path = path.parent.parent / "video" / "r3d_raster.cpp"
+raster_cpp = raster_cpp_path.read_text()
+old_same_size = """\tif (width == w && height == h && game_width == gw)
+\t\treturn;"""
+new_same_size = """\tif (width == w && height == h && game_width == gw) {
+\t\tif (base.empty()) alloc();
+\t\treturn;
+\t}"""
+if new_same_size not in raster_cpp:
+    if raster_cpp.count(old_same_size) != 1:
+        raise SystemExit("expected exactly one Raster::resize same-size check")
+    raster_cpp = raster_cpp.replace(old_same_size, new_same_size, 1)
+
+geometry_method = """void Raster::resize_geometry_only(int width, int height, int game_width)
+{
+\tdrop_buffers();
+\tif (game_width <= 0) game_width = int(std::lround(496.0 * height / 384.0));
+\tgame_width = std::min(game_width, width);
+\tif (width == w && height == h && game_width == gw)
+\t\treturn;
+\tw = width;
+\th = height;
+\tgw = game_width;
+\tscale = h / 384.0f;
+\txscale = gw / 496.0f;
+\tgx = (w - gw) / 2;
+}
+
+"""
+if "void Raster::resize_geometry_only" not in raster_cpp:
+    anchor = "void Raster::alloc()"
+    if raster_cpp.count(anchor) != 1:
+        raise SystemExit("expected exactly one Raster::alloc definition")
+    raster_cpp = raster_cpp.replace(anchor, geometry_method + anchor, 1)
+raster_cpp_path.write_text(raster_cpp)
+
