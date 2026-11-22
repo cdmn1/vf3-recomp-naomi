@@ -1,4 +1,5 @@
 #include "vf3_image.h"
+#include "cart_vrom_bridge.h"
 #include "cart_vrom.h"
 
 #include <assert.h>
