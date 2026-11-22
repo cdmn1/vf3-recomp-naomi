@@ -63,6 +63,16 @@ extern "C" void naomi_model3_crom_bind(naomi_cart_rom_t *rom)
         last_crom_status = naomi_cart_rom_select_bank(bound_crom, 0u);
 }
 
+extern "C" const uint8_t *naomi_model3_crom_fixed(void)
+{
+    return naomi_cart_rom_fixed(bound_crom);
+}
+
+extern "C" uint8_t *naomi_model3_crom_fixed_mutable(void)
+{
+    return bound_crom && bound_crom->fixed_valid ? bound_crom->fixed_crom : 0;
+}
+
 extern "C" int naomi_model3_crom_is_bound(void)
 {
     return bound_crom != 0;

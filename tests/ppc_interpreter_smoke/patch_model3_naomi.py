@@ -64,12 +64,37 @@ replace_once(
 }""", "set_crom_bank")
 
 replace_once(
-"""uint16_t Model3::peek16(uint32_t a) const
+"	cpu.attach(this, ram.data(), crom.data());",
+"""#ifdef VF3_NAOMI
+	const uint8_t *fixed_crom = naomi_model3_crom_fixed();
+	cpu.attach(this, ram.data(), fixed_crom ? fixed_crom : crom.data());
+#else
+	cpu.attach(this, ram.data(), crom.data());
+#endif""", "CPU CROM attach")
+
+replace_once(
+"""std::vector<uint32_t> Model3::program_image() const
 {
-	if (a < 0x00800000) return *reinterpret_cast<const uint16_t *>(&ram[(a & 0x7FFFFE) ^ 2]);
-	if ((a >> 24) == 0xFF) return *reinterpret_cast<const uint16_t *>(&(a < 0xFF800000 ? crom_bank : crom.data())[(a & 0x7FFFFE) ^ 2]);
-	return 0;
+	// The boot copies the program from the fixed CROM to RAM 0 (Revision D's: 0xA0000 bytes from 0x710000,
+	// docs/step1-measure.md)
+	std::vector<uint32_t> img(profile->program_size / 4);
+	memcpy(img.data(), &crom[profile->program_at], profile->program_size);
+	return img;
 }""",
+"""std::vector<uint32_t> Model3::program_image() const
+{
+	// The boot copies the program from the fixed CROM to RAM 0.
+	std::vector<uint32_t> img(profile->program_size / 4);
+	const uint8_t *fixed = crom.data();
+#ifdef VF3_NAOMI
+	const uint8_t *netdimm_fixed = naomi_model3_crom_fixed();
+	if (netdimm_fixed) fixed = netdimm_fixed;
+#endif
+	memcpy(img.data(), fixed + profile->program_at, profile->program_size);
+	return img;
+}""", "program_image")
+
+replace_once(
 """uint16_t Model3::peek16(uint32_t a) const
 {
 	if (a < 0x00800000) return *reinterpret_cast<const uint16_t *>(&ram[(a & 0x7FFFFE) ^ 2]);
@@ -81,14 +106,32 @@ replace_once(
 		return *reinterpret_cast<const uint16_t *>(&(a < 0xFF800000 ? crom_bank : crom.data())[(a & 0x7FFFFE) ^ 2]);
 	}
 	return 0;
+}""",
+"""uint16_t Model3::peek16(uint32_t a) const
+{
+	if (a < 0x00800000) return *reinterpret_cast<const uint16_t *>(&ram[(a & 0x7FFFFE) ^ 2]);
+	if ((a >> 24) == 0xFF) {
+#ifdef VF3_NAOMI
+		if (naomi_model3_crom_is_bound()) {
+			if (a < 0xFF800000)
+				return naomi_model3_crom_read16((a & 0x7FFFFE) ^ 2);
+			return *reinterpret_cast<const uint16_t *>(naomi_model3_crom_fixed() + ((a & 0x7FFFFE) ^ 2));
+		}
+#endif
+		return *reinterpret_cast<const uint16_t *>(&(a < 0xFF800000 ? crom_bank : crom.data())[(a & 0x7FFFFE) ^ 2]);
+	}
+	return 0;
 }""", "peek16")
 
 replace_once(
 "	case 0xFF: return (a < 0xFF800000 ? crom_bank : crom.data())[(a & 0x7FFFFF) ^ 3];",
 """	case 0xFF:
 #ifdef VF3_NAOMI
-		if (a < 0xFF800000 && naomi_model3_crom_is_bound())
-			return naomi_model3_crom_read8((a & 0x7FFFFF) ^ 3);
+		if (naomi_model3_crom_is_bound()) {
+			if (a < 0xFF800000)
+				return naomi_model3_crom_read8((a & 0x7FFFFF) ^ 3);
+			return naomi_model3_crom_fixed()[(a & 0x7FFFFF) ^ 3];
+		}
 #endif
 		return (a < 0xFF800000 ? crom_bank : crom.data())[(a & 0x7FFFFF) ^ 3];""", "read8 CROM")
 
@@ -96,8 +139,11 @@ replace_once(
 "	case 0xFF: return *reinterpret_cast<const uint16_t *>(&(a < 0xFF800000 ? crom_bank : crom.data())[(a & 0x7FFFFF) ^ 2]);",
 """	case 0xFF:
 #ifdef VF3_NAOMI
-		if (a < 0xFF800000 && naomi_model3_crom_is_bound())
-			return naomi_model3_crom_read16((a & 0x7FFFFF) ^ 2);
+		if (naomi_model3_crom_is_bound()) {
+			if (a < 0xFF800000)
+				return naomi_model3_crom_read16((a & 0x7FFFFF) ^ 2);
+			return *reinterpret_cast<const uint16_t *>(naomi_model3_crom_fixed() + ((a & 0x7FFFFF) ^ 2));
+		}
 #endif
 		return *reinterpret_cast<const uint16_t *>(&(a < 0xFF800000 ? crom_bank : crom.data())[(a & 0x7FFFFF) ^ 2]);""", "read16 CROM")
 
@@ -105,9 +151,80 @@ replace_once(
 "	case 0xFF: return *reinterpret_cast<const uint32_t *>(&(a < 0xFF800000 ? crom_bank : crom.data())[a & 0x7FFFFF]);",
 """	case 0xFF:
 #ifdef VF3_NAOMI
-		if (a < 0xFF800000 && naomi_model3_crom_is_bound())
-			return naomi_model3_crom_read32(a & 0x7FFFFF);
+		if (naomi_model3_crom_is_bound()) {
+			if (a < 0xFF800000)
+				return naomi_model3_crom_read32(a & 0x7FFFFF);
+			return *reinterpret_cast<const uint32_t *>(naomi_model3_crom_fixed() + (a & 0x7FFFFF));
+		}
 #endif
 		return *reinterpret_cast<const uint32_t *>(&(a < 0xFF800000 ? crom_bank : crom.data())[a & 0x7FFFFF]);""", "read32 CROM")
+
+replace_once(
+"""int Model3::hide_free_play_text()
+{
+	if (!free_play_text.empty()) return int(free_play_text.size());""",
+"""int Model3::hide_free_play_text()
+{
+#ifdef VF3_NAOMI
+	uint8_t *fixed_crom = naomi_model3_crom_fixed_mutable();
+	size_t fixed_crom_size = fixed_crom ? 0x800000u : crom.size();
+	if (!fixed_crom) fixed_crom = crom.data();
+#else
+	uint8_t *fixed_crom = crom.data();
+	size_t fixed_crom_size = crom.size();
+#endif
+	if (!free_play_text.empty()) return int(free_play_text.size());""", "hide_free_play_text entry")
+replace_once(
+"""const size_t CROM_AT = profile->program_at;
+	const Profile::FreePlayText &t = profile->free_play_text;
+	auto at = [&](size_t a) -> uint8_t & { return crom[(a + CROM_AT) ^ 3]; };""",
+"""const size_t CROM_AT = profile->program_at;
+	const Profile::FreePlayText &t = profile->free_play_text;
+	auto at = [&](size_t a) -> uint8_t & { return fixed_crom[(a + CROM_AT) ^ 3]; };""",
+"hide_free_play_text CROM pointer")
+replace_once("a + CROM_AT + k >= crom.size()",
+             "a + CROM_AT + k >= fixed_crom_size",
+             "hide_free_play_text CROM bounds")
+
+replace_once(
+"""int Model3::set_dural(bool on, bool offline, bool legacy)
+{
+	const size_t CROM_AT = profile->program_at;""",
+"""int Model3::set_dural(bool on, bool offline, bool legacy)
+{
+#ifdef VF3_NAOMI
+	uint8_t *fixed_crom = naomi_model3_crom_fixed_mutable();
+	size_t fixed_crom_size = fixed_crom ? 0x800000u : crom.size();
+	if (!fixed_crom) fixed_crom = crom.data();
+#else
+	uint8_t *fixed_crom = crom.data();
+	size_t fixed_crom_size = crom.size();
+#endif
+	const size_t CROM_AT = profile->program_at;""", "set_dural entry")
+replace_once(
+"""const size_t CROM_AT = profile->program_at;
+	auto at = [&](size_t a) -> uint8_t & { return crom[(a + CROM_AT) ^ 3]; };""",
+"""const size_t CROM_AT = profile->program_at;
+	auto at = [&](size_t a) -> uint8_t & { return fixed_crom[(a + CROM_AT) ^ 3]; };""",
+"set_dural CROM pointer")
+replace_once("if (!d || crom.size() < CROM_AT + profile->program_size) return 0;",
+             "if (!d || fixed_crom_size < CROM_AT + profile->program_size) return 0;",
+             "set_dural CROM bounds")
+
+replace_once(
+"""void Model3::show_free_play_text()
+{
+	for (auto &[a, bytes] : free_play_text)
+		for (size_t k = 0; k < bytes.size(); k++) crom[(a + profile->program_at + k) ^ 3] = bytes[k];""",
+"""void Model3::show_free_play_text()
+{
+#ifdef VF3_NAOMI
+	uint8_t *fixed_crom = naomi_model3_crom_fixed_mutable();
+	if (!fixed_crom) fixed_crom = crom.data();
+#else
+	uint8_t *fixed_crom = crom.data();
+#endif
+	for (auto &[a, bytes] : free_play_text)
+		for (size_t k = 0; k < bytes.size(); k++) fixed_crom[(a + profile->program_at + k) ^ 3] = bytes[k];""", "show_free_play_text")
 
 path.write_text(source)

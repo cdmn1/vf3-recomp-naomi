@@ -16,6 +16,8 @@ int naomi_model3_vrom_last_status(void);
 
 /* Bind the initialized resident-fixed-CROM / bank-page-cache state. */
 void naomi_model3_crom_bind(naomi_cart_rom_t *rom);
+const uint8_t *naomi_model3_crom_fixed(void);
+uint8_t *naomi_model3_crom_fixed_mutable(void);
 int naomi_model3_crom_is_bound(void);
 int naomi_model3_crom_select_bank(uint8_t bank_register);
 uint8_t naomi_model3_crom_read8(uint32_t bank_offset);

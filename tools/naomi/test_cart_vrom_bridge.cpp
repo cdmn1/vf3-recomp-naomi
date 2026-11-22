@@ -119,6 +119,8 @@ int main()
         NAOMI_VF3_IMAGE_VERIFY_SIZE, 1000, &io) == NAOMI_VF3_IMAGE_OK);
     assert(image.mounted == 1);
     assert(naomi_model3_crom_is_bound());
+    assert(naomi_model3_crom_fixed() == fixed);
+    assert(naomi_model3_crom_fixed_mutable() == fixed);
 
     assert(naomi_model3_crom_read8(3) == 3);
     assert(naomi_model3_crom_read16(2) == 0x0302);
