@@ -88,5 +88,27 @@ class CartImageFormatTests(unittest.TestCase):
             self.assertIn("PASS", result.stdout)
 
 
+    def test_naomi_pvr_buffer(self):
+        with tempfile.TemporaryDirectory() as td:
+            include_dir = pathlib.Path(td) / "include"
+            pvr_header = include_dir / "dc" / "pvr.h"
+            pvr_header.parent.mkdir(parents=True)
+            pvr_header.write_text(
+                "#pragma once\n#include <stddef.h>\ntypedef void *pvr_ptr_t;\n"
+                "#ifdef __cplusplus\nextern \"C\" {\n#endif\n"
+                "size_t pvr_mem_available(void);\n"
+                "pvr_ptr_t pvr_mem_malloc(size_t);\n"
+                "void pvr_mem_free(pvr_ptr_t);\n"
+                "#ifdef __cplusplus\n}\n#endif\n"
+            )
+            exe = pathlib.Path(td) / "naomi-pvr-buffer-test"
+            subprocess.run([
+                "c++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                "-I", str(include_dir), "-I", str(ROOT / "platform/naomi"),
+                str(ROOT / "tools/naomi/test_naomi_pvr_vector.cpp"),
+                "-o", str(exe),
+            ], check=True)
+            subprocess.run([str(exe)], check=True)
+
 if __name__ == "__main__":
     unittest.main()

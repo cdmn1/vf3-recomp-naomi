@@ -30,7 +30,7 @@ rom: $(ROM)
 # without linking or allocating the large emulated memory regions.
 model3-compile: model3.o cart_vrom_bridge.o vf3_image.o
 
-model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h patch_model3_naomi.py ../../platform/naomi/cart_vrom_bridge.h
+model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h patch_model3_naomi.py ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/naomi_pvr_vector.h
 	python3 patch_model3_naomi.py $(VF3_RECOMP_DIR)/src/machine/model3.cpp
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -I$(VF3_RECOMP_DIR)/src/machine -c $< -o $@
 

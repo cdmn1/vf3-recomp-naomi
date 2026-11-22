@@ -71,3 +71,9 @@ Host tests cover the 24-bit wrap from word 0xFFFFFF to word zero, exact word seq
 The mount object retains the parsed layout and cache metadata and must remain alive for the entire board session. Fixed CROM, the 256 KiB bank-page cache and the 64 KiB verification scratch area are caller-owned; the mount code allocates no memory. The Model 3 patch now obtains the fixed-CROM pointer from the bridge for PPC instruction fetch, fixed-CROM bus reads, program-image copying, and the existing free-play/Dural patch routines, so those writes remain in the same resident buffer rather than requiring a second 8 MiB copy. The host integration test constructs a synthetic full-size image, verifies all region CRCs, mounts it, and exercises the actual CROM/VROM bridge calls.
 
 This is now a usable NetDIMM image-mount component, but it is not yet invoked by a Naomi game startup entrypoint. The normal upstream `Model3::load()` path still creates the desktop ZIP-backed resident ROM vectors; replacing that load path and reconciling the remaining board/renderer memory allocations is the next integration stage.
+
+## Main-RAM relief: Model 3 texture RAM in Naomi PVR VRAM
+
+The Naomi KOS target exposes 16 MiB of PVR2 VRAM (the retail Dreamcast target exposes 8 MiB). KOS's `pvr_mem_malloc()` returns a 32-byte-aligned, SH-4-addressable VRAM pointer and `pvr_mem_available()` reports the pool remaining after PVR command/bin buffers have been reserved.
+
+The Naomi Model 3 build now substitutes a small vector-like PVR allocator for the upstream 8 MiB `tex_ram` vector. It allocates the same 2048×2048 16-bit backing store from the PVR pool, retains the existing indexed/iterator semantics used by the board core, and fails the load explicitly if the PVR allocator is not initialized or cannot supply the full 8 MiB. This moves that backing store out of the 32 MiB SH-4 main-RAM budget; it does not yet implement the final PVR2 texture conversion/render path.
