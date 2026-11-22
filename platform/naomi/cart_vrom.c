@@ -17,7 +17,8 @@ static naomi_cart_vrom_status_t stream_words(const naomi_cart_image_layout_t *im
   for(uint32_t i=0;i<take;i++)if(!sink(context,words[skip+i])){if(io_result)*io_result=last;return NAOMI_CART_VROM_SINK_ERROR;}
   emitted+=take;
  }
- if(io_result)*io_result=last;return NAOMI_CART_VROM_OK;
+ if(io_result) *io_result=last;
+ return NAOMI_CART_VROM_OK;
 }
 naomi_cart_vrom_status_t naomi_cart_vrom_texture_port(const naomi_cart_image_layout_t *image,uint32_t word_address,uint32_t fifo_words_used,uint32_t fifo_capacity_words,void *scratch,uint32_t scratch_size,uint32_t timeout_ms,naomi_cart_vrom_word_sink_t sink,void *sink_context,naomi_cart_vrom_result_t *result,naomi_cart_dma_result_t *io_result){
  const naomi_cart_image_region_t *vrom;uint32_t header,declared,available,emit;naomi_cart_vrom_result_t r={0,0};naomi_cart_dma_result_t last={0,0,0,0,0};naomi_cart_vrom_status_t stream_rc;
