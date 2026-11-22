@@ -57,3 +57,17 @@ The pinned upstream `Model3::r3d_texture_port()` reads a 24-bit word address, ob
 `platform/naomi/cart_vrom.c` implements that operation against the packed single-copy 32 MiB VROM region. It uses a caller-owned 64 KiB scratch buffer, aligned synchronous DMA reads, preserves word order, collapses the duplicated upper half onto the same 32 MiB data, and respects the remaining FIFO capacity. The sink callback receives words synchronously; it must append or consume each word before returning and must not retain the scratch pointer.
 
 Host tests cover the 24-bit wrap from word 0xFFFFFF to word zero, exact word sequence, the upstream length calculation, and FIFO-full truncation. The pinned upstream Model 3 texture-port handler is patched in the Naomi build to call a C++ bridge, which streams into the existing 1 MiB texture FIFO. The image binding must still be supplied by the Naomi startup/image-mount path; that loader is not yet implemented. This has not been measured on physical hardware.
+
+## VF3NROM mount and bridge binding
+
+`platform/naomi/vf3_image.c` adds an allocation-free mount sequence for the packed VF3 Revision D image:
+
+1. Read and parse the 4 KiB VF3NROM v1 header at the packer's fixed 16 MiB image offset.
+2. Load the 8 MiB fixed CROM into a caller-owned, 32-byte-aligned buffer.
+3. Check the fixed CROM CRC from that resident buffer.
+4. Stream-verify the full 64 MiB banked-CROM and 32 MiB VROM regions using a caller-owned 64 KiB scratch buffer.
+5. Bind the persistent image layout to the Model 3 VROM bridge and the initialized CROM page cache to the Model 3 banked-CROM bridge.
+
+The mount object retains the parsed layout and cache metadata and must remain alive for the entire board session. Fixed CROM, the 256 KiB bank-page cache and the 64 KiB verification scratch area are caller-owned; the mount code allocates no memory. The host integration test constructs a synthetic full-size image, verifies all region CRCs, mounts it, and exercises the actual CROM/VROM bridge calls.
+
+This is now a usable NetDIMM image-mount component, but it is not yet invoked by a Naomi game startup entrypoint. The normal upstream `Model3::load()` path still creates the desktop ZIP-backed resident ROM vectors; replacing that load path and reconciling the remaining board/renderer memory allocations is the next integration stage.

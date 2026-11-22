@@ -67,7 +67,7 @@ class CartImageFormatTests(unittest.TestCase):
     def test_model3_rom_bridge(self):
         with tempfile.TemporaryDirectory() as td:
             objects = []
-            for name in ("cart_image_format", "cart_image", "cart_rom", "cart_vrom"):
+            for name in ("cart_image_format", "cart_image", "cart_rom", "cart_vrom", "vf3_image"):
                 source = ROOT / "platform/naomi" / (name + ".c")
                 obj = pathlib.Path(td) / (name + ".o")
                 subprocess.run([

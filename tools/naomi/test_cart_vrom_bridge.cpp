@@ -1,5 +1,4 @@
-#include "cart_vrom_bridge.h"
-#include "cart_rom.h"
+#include "vf3_image.h"
 #include "cart_vrom.h"
 
 #include <assert.h>
@@ -30,33 +29,56 @@ extern "C" naomi_cart_dma_status_t naomi_cart_dma_read(
     return NAOMI_CART_DMA_OK;
 }
 
+static void write_le32(uint8_t *p, uint32_t v)
+{
+    p[0] = static_cast<uint8_t>(v);
+    p[1] = static_cast<uint8_t>(v >> 8);
+    p[2] = static_cast<uint8_t>(v >> 16);
+    p[3] = static_cast<uint8_t>(v >> 24);
+}
+
+static uint32_t make_header_crc(const uint8_t *header)
+{
+    const uint8_t zero[4] = {};
+    uint32_t state = 0xFFFFFFFFu;
+    state = naomi_cart_crc32_update(state, header, 28);
+    state = naomi_cart_crc32_update(state, zero, 4);
+    state = naomi_cart_crc32_update(state, header + 32,
+        NAOMI_CART_IMAGE_HEADER_SIZE - 32);
+    return state ^ 0xFFFFFFFFu;
+}
+
+static void write_region(uint8_t *d, uint32_t id, uint32_t offset,
+                         uint32_t size, uint32_t crc)
+{
+    write_le32(d, id);
+    write_le32(d + 4, offset);
+    write_le32(d + 8, size);
+    write_le32(d + 12, crc);
+}
+
 int main()
 {
-    const uint32_t fixed_offset = 0x1000u;
-    const uint32_t banked_offset = 0x00801000u;
-    const uint32_t vrom_offset = 0x04801000u;
-    naomi_cart_image_layout_t image = {};
-    naomi_cart_rom_t rom;
+    const uint32_t header_offset = NAOMI_VF3_IMAGE_HEADER_OFFSET;
+    const uint32_t fixed_offset = header_offset + NAOMI_CART_IMAGE_HEADER_SIZE;
+    const uint32_t banked_offset = fixed_offset + NAOMI_CART_CROM_FIXED_SIZE;
+    const uint32_t vrom_offset = banked_offset +
+        NAOMI_CART_CROM_BANK_SIZE * NAOMI_CART_CROM_BANK_COUNT;
+    const uint32_t payload_size = NAOMI_CART_IMAGE_HEADER_SIZE +
+        NAOMI_CART_CROM_FIXED_SIZE +
+        NAOMI_CART_CROM_BANK_SIZE * NAOMI_CART_CROM_BANK_COUNT +
+        NAOMI_CART_VROM_LOGICAL_SIZE;
+
+    naomi_vf3_image_t image = {};
     naomi_cart_dma_result_t io = {};
-    void *fixed = 0, *cache = 0;
+    void *fixed = 0, *cache = 0, *scratch = 0;
+    uint8_t *header;
 
     cart = static_cast<uint8_t *>(calloc(1, 0x08000000u));
     assert(cart);
-    assert(posix_memalign(&fixed, 32, NAOMI_CART_CROM_FIXED_SIZE) == 0);
-    assert(posix_memalign(&cache, 32, NAOMI_CART_CROM_CACHE_SIZE) == 0);
-
-    image.regions[0].id = NAOMI_CART_REGION_FIXED_CROM;
-    image.regions[0].offset = fixed_offset;
-    image.regions[0].size = NAOMI_CART_CROM_FIXED_SIZE;
-    image.regions[1].id = NAOMI_CART_REGION_BANKED_CROM;
-    image.regions[1].offset = banked_offset;
-    image.regions[1].size = NAOMI_CART_CROM_BANK_SIZE * NAOMI_CART_CROM_BANK_COUNT;
-    image.regions[2].id = NAOMI_CART_REGION_VROM;
-    image.regions[2].offset = vrom_offset;
-    image.regions[2].size = NAOMI_CART_VROM_LOGICAL_SIZE;
-    { uint32_t header = 30, words[3] = {0x11223344u, 0x11223345u, 0x11223346u};
-      memcpy(cart + vrom_offset, &header, 4);
-      memcpy(cart + vrom_offset + 4, words, sizeof(words)); }
+    assert(posix_memalign(&fixed, 32, NAOMI_VF3_IMAGE_FIXED_SIZE) == 0);
+    assert(posix_memalign(&cache, 32, NAOMI_VF3_IMAGE_BANK_CACHE_SIZE) == 0);
+    assert(posix_memalign(&scratch, 32, NAOMI_VF3_IMAGE_VERIFY_SIZE) == 0);
 
     for (uint32_t bank = 0; bank < NAOMI_CART_CROM_BANK_COUNT; ++bank) {
         uint8_t *p = cart + banked_offset + bank * NAOMI_CART_CROM_BANK_SIZE;
@@ -64,23 +86,49 @@ int main()
             p[i] = static_cast<uint8_t>(bank * 16u + i);
     }
 
-    assert(naomi_cart_rom_init(&rom, &image, fixed, NAOMI_CART_CROM_FIXED_SIZE,
-        cache, NAOMI_CART_CROM_CACHE_SIZE, 1000, &io) == NAOMI_CART_IMAGE_OK);
-    naomi_model3_crom_bind(&rom);
+    {
+        uint32_t vrom_header = 30;
+        uint32_t words[3] = {0x11223344u, 0x11223345u, 0x11223346u};
+        memcpy(cart + vrom_offset, &vrom_header, 4);
+        memcpy(cart + vrom_offset + 4, words, sizeof(words));
+    }
+
+    header = cart + header_offset;
+    memcpy(header, "VF3NROM\0", 8);
+    write_le32(header + 8, NAOMI_CART_IMAGE_VERSION);
+    write_le32(header + 12, NAOMI_CART_IMAGE_HEADER_SIZE);
+    write_le32(header + 16, NAOMI_CART_IMAGE_PROFILE_VF3_REV_D);
+    write_le32(header + 20, NAOMI_CART_IMAGE_REGION_COUNT);
+    write_le32(header + 24, payload_size);
+    write_le32(header + 28, 0);
+    write_region(header + 32, NAOMI_CART_REGION_FIXED_CROM,
+        fixed_offset, NAOMI_CART_CROM_FIXED_SIZE,
+        naomi_cart_crc32(cart + fixed_offset, NAOMI_CART_CROM_FIXED_SIZE));
+    write_region(header + 48, NAOMI_CART_REGION_BANKED_CROM,
+        banked_offset, NAOMI_CART_CROM_BANK_SIZE * NAOMI_CART_CROM_BANK_COUNT,
+        naomi_cart_crc32(cart + banked_offset,
+            NAOMI_CART_CROM_BANK_SIZE * NAOMI_CART_CROM_BANK_COUNT));
+    write_region(header + 64, NAOMI_CART_REGION_VROM,
+        vrom_offset, NAOMI_CART_VROM_LOGICAL_SIZE,
+        naomi_cart_crc32(cart + vrom_offset, NAOMI_CART_VROM_LOGICAL_SIZE));
+    write_le32(header + 28, make_header_crc(header));
+
+    assert(naomi_vf3_image_mount(&image, fixed, NAOMI_VF3_IMAGE_FIXED_SIZE,
+        cache, NAOMI_VF3_IMAGE_BANK_CACHE_SIZE, scratch,
+        NAOMI_VF3_IMAGE_VERIFY_SIZE, 1000, &io) == NAOMI_VF3_IMAGE_OK);
+    assert(image.mounted == 1);
     assert(naomi_model3_crom_is_bound());
 
     assert(naomi_model3_crom_read8(3) == 3);
     assert(naomi_model3_crom_read16(2) == 0x0302);
     assert(naomi_model3_crom_read32(4) == 0x07060504u);
-
-    assert(naomi_model3_crom_select_bank(0xFE)); /* logical bank 1 */
+    assert(naomi_model3_crom_select_bank(0xFE));
     assert(naomi_model3_crom_read8(0) == 16);
     assert(naomi_model3_crom_read32(4) == 0x17161514u);
-
-    assert(naomi_model3_crom_select_bank(0xF7)); /* logical bank 8 mirrors bank 0 */
+    assert(naomi_model3_crom_select_bank(0xF7));
     assert(naomi_model3_crom_read8(0) == 0);
 
-    naomi_model3_vrom_bind(&image);
+    naomi_model3_vrom_bind(&image.layout);
     std::vector<uint32_t> fifo;
     assert(naomi_model3_vrom_port(0, &fifo));
     assert(naomi_model3_vrom_last_status() == NAOMI_CART_VROM_OK);
@@ -91,6 +139,7 @@ int main()
     free(cart);
     free(fixed);
     free(cache);
-    puts("VF3 Model 3 CROM bridge: PASS");
+    free(scratch);
+    puts("VF3 NetDIMM image mount and Model 3 ROM bridges: PASS");
     return 0;
 }
