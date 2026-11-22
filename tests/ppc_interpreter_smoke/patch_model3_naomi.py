@@ -561,6 +561,18 @@ if new_poly_range not in scene:
         raise SystemExit("expected exactly one SceneBuilder polygon RAM pointer test")
     scene = scene.replace(old_poly_range, new_poly_range, 1)
 
+
+old_next_id = "static std::atomic<uint64_t> next_id{ 1 };"
+new_next_id = """#ifdef VF3_NAOMI
+\tstatic uint64_t next_id = 1;
+#else
+\tstatic std::atomic<uint64_t> next_id{ 1 };
+#endif"""
+if new_next_id not in scene:
+    if scene.count(old_next_id) != 1:
+        raise SystemExit("expected exactly one SceneBuilder atomic frame id")
+    scene = scene.replace(old_next_id, new_next_id, 1)
+
 scene_path.write_text(scene)
 
 
