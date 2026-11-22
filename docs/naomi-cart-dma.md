@@ -38,8 +38,6 @@ This is not yet connected to the Model 3 board core. It does not yet:
 
 The next porting step is to integrate the reader with the upstream Model 3 memory paths while solving the Naomi 32 MiB main-RAM budget. No physical-hardware success is claimed for the new shared reader.
 
-
-
 ## Fixed CROM and bounded bank-page cache
 
 `platform/naomi/cart_rom.c` keeps the patched 8 MiB fixed-CROM region resident, but avoids an 8 MiB bank allocation:
@@ -52,4 +50,10 @@ The next porting step is to integrate the reader with the upstream Model 3 memor
 
 The host test writes distinct signatures for each bank, checks all eight logical banks, confirms bank-15 mirroring, exercises multiple page reads and rejects an out-of-range page. Naomi CI compiles and links this layer into the cartridge probe.
 
-This is a much smaller cache than a full 8 MiB window, but it introduces synchronous DMA on cache misses. Its performance under actual VF3 PPC access patterns has not yet been measured. It is not connected to the upstream bus handlers yet.
+## Bounded VROM texture-port streamer
+
+The pinned upstream `Model3::r3d_texture_port()` reads a 24-bit word address, obtains its length from the first word using `(2 + v[addr] / 2) / 4`, then appends sequential words until the 1 MiB texture FIFO is full. Its VROM vector is 64 MiB: two identical 32 MiB copies, with the 24-bit word address wrapping at 0xFFFFFF.
+
+`platform/naomi/cart_vrom.c` implements that operation against the packed single-copy 32 MiB VROM region. It uses a caller-owned 64 KiB scratch buffer, aligned synchronous DMA reads, preserves word order, collapses the duplicated upper half onto the same 32 MiB data, and respects the remaining FIFO capacity. The sink callback receives words synchronously; it must append or consume each word before returning and must not retain the scratch pointer.
+
+Host tests cover the 24-bit wrap from word 0xFFFFFF to word zero, exact word sequence, the upstream length calculation, and FIFO-full truncation. This is a tested streaming primitive, not yet wired into the upstream Real3D handler. It has not been measured on physical hardware.

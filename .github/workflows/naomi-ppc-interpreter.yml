@@ -9,6 +9,7 @@ on:
       - "tests/naomi_cart_probe/**"
       - "platform/naomi/**"
       - "tools/naomi/test_cart_rom.c"
+      - "tools/naomi/test_cart_vrom.c"
       - "tools/naomi/test_cart_image_format.py"
       - "VERSION"
       - ".github/workflows/naomi-ppc-interpreter.yml"
@@ -140,7 +141,6 @@ jobs:
           export KOS_SUBARCH=naomi
           export KOS_INC_PATHS=""
           . "$KOS_BASE/environ.sh"
-          # Required by the proven Naomi KOS build setup.
           export KOS_INC_PATHS_CPP=""
           make -C "$KOS_BASE" -j2
 
@@ -164,8 +164,6 @@ jobs:
         run: |
           set -eo pipefail
           cd softfloat/build/Linux-x86_64-GCC
-          # Use SoftFloat's ARM GCC platform definitions: little-endian GCC,
-          # 64-bit integer support, and no x86-only __int128 intrinsics.
           cp ../Linux-ARM-VFPv2-GCC/platform.h platform.h
           make clean
           make \
@@ -179,8 +177,6 @@ jobs:
           KOS_BASE: ${{ github.workspace }}/kos
           VF3_RECOMP_DIR: ${{ github.workspace }}/vf3-recomp
         run: |
-          # KOS's environment scripts reference optional variables that may be unset.
-          # Match the working Naomi projects: use -e/-o pipefail, but not nounset (-u).
           set -eo pipefail
           export KOS_SUBARCH=naomi
           . "$KOS_BASE/environ.sh"
@@ -228,7 +224,6 @@ jobs:
           KOS_BASE: ${{ github.workspace }}/kos
           VF3_RECOMP_DIR: ${{ github.workspace }}/vf3-recomp
         run: |
-          # KOS's environment scripts reference optional variables that may be unset.
           set -eo pipefail
           export KOS_SUBARCH=naomi
           . "$KOS_BASE/environ.sh"
@@ -245,8 +240,6 @@ jobs:
           CART_ROM="naomi_cart_read_probe-v${GITHUB_RUN_NUMBER}.bin"
           BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/naomi_cart_probe rom
           test -s "tests/naomi_cart_probe/$CART_ROM"
-          # Keep the Naomi executable segment unchanged, but extend the ROM
-          # image to 64 MiB with known markers throughout the image.
           python3 - "tests/naomi_cart_probe/$CART_ROM" <<'PY'
           import pathlib, sys
           path = pathlib.Path(sys.argv[1])
@@ -258,8 +251,6 @@ jobs:
               ), 1):
                   image.seek(offset)
                   image.write(("VF3PIO%d!" % index).encode("ascii"))
-              # Deterministic 4 MiB source at 36 MiB for larger DMA validation.
-              # This region avoids the PIO marker locations used above.
               payload = bytearray(0x00400000)
               for word_index in range(len(payload) // 2):
                   word = 0xA500 ^ ((word_index * 73 + (word_index >> 5)) & 0xFFFF)
