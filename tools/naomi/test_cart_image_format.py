@@ -81,6 +81,7 @@ class CartImageFormatTests(unittest.TestCase):
                 "c++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
                 "-I", str(ROOT / "platform/naomi"),
                 str(ROOT / "platform/naomi/cart_vrom_bridge.cpp"),
+                str(ROOT / "platform/naomi/vf3_image_runtime.cpp"),
                 str(ROOT / "tools/naomi/test_cart_vrom_bridge.cpp"),
                 *objects, "-o", str(exe),
             ], check=True)

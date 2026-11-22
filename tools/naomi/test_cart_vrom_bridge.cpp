@@ -69,17 +69,10 @@ int main()
         NAOMI_CART_CROM_FIXED_SIZE +
         NAOMI_CART_CROM_BANK_SIZE * NAOMI_CART_CROM_BANK_COUNT +
         NAOMI_CART_VROM_LOGICAL_SIZE;
-
-    naomi_vf3_image_t image = {};
-    naomi_cart_dma_result_t io = {};
-    void *fixed = 0, *cache = 0, *scratch = 0;
     uint8_t *header;
 
     cart = static_cast<uint8_t *>(calloc(1, 0x08000000u));
     assert(cart);
-    assert(posix_memalign(&fixed, 32, NAOMI_VF3_IMAGE_FIXED_SIZE) == 0);
-    assert(posix_memalign(&cache, 32, NAOMI_VF3_IMAGE_BANK_CACHE_SIZE) == 0);
-    assert(posix_memalign(&scratch, 32, NAOMI_VF3_IMAGE_VERIFY_SIZE) == 0);
 
     for (uint32_t bank = 0; bank < NAOMI_CART_CROM_BANK_COUNT; ++bank) {
         uint8_t *p = cart + banked_offset + bank * NAOMI_CART_CROM_BANK_SIZE;
@@ -114,13 +107,10 @@ int main()
         naomi_cart_crc32(cart + vrom_offset, NAOMI_CART_VROM_LOGICAL_SIZE));
     write_le32(header + 28, make_header_crc(header));
 
-    assert(naomi_vf3_image_mount(&image, fixed, NAOMI_VF3_IMAGE_FIXED_SIZE,
-        cache, NAOMI_VF3_IMAGE_BANK_CACHE_SIZE, scratch,
-        NAOMI_VF3_IMAGE_VERIFY_SIZE, 1000, &io) == NAOMI_VF3_IMAGE_OK);
-    assert(image.mounted == 1);
+    assert(naomi_model3_mount_netdimm_image() == NAOMI_VF3_IMAGE_OK);
     assert(naomi_model3_crom_is_bound());
-    assert(naomi_model3_crom_fixed() == fixed);
-    assert(naomi_model3_crom_fixed_mutable() == fixed);
+    assert(naomi_model3_crom_fixed() != 0);
+    assert(naomi_model3_crom_fixed_mutable() == naomi_model3_crom_fixed());
 
     assert(naomi_model3_crom_read8(3) == 3);
     assert(naomi_model3_crom_read16(2) == 0x0302);
@@ -131,7 +121,6 @@ int main()
     assert(naomi_model3_crom_select_bank(0xF7));
     assert(naomi_model3_crom_read8(0) == 0);
 
-    naomi_model3_vrom_bind(&image.layout);
     std::vector<uint32_t> fifo;
     assert(naomi_model3_vrom_port(0, &fifo));
     assert(naomi_model3_vrom_last_status() == NAOMI_CART_VROM_OK);
@@ -140,9 +129,6 @@ int main()
            fifo[2] == 0x11223345u && fifo[3] == 0x11223346u);
 
     free(cart);
-    free(fixed);
-    free(cache);
-    free(scratch);
-    puts("VF3 NetDIMM image mount and Model 3 ROM bridges: PASS");
+    puts("VF3 NetDIMM runtime mount and Model 3 ROM bridges: PASS");
     return 0;
 }
