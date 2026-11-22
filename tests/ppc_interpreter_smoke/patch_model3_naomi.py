@@ -419,7 +419,9 @@ new_scene_namespace = """namespace {
 
 #ifdef VF3_NAOMI
 constexpr uint32_t NAOMI_VROM_MODEL_SCRATCH_WORDS = 0x00020000u;
+constexpr uint32_t NAOMI_VROM_MODEL_CHUNK_WORDS = 0x00001000u;
 alignas(32) uint32_t naomi_vrom_model_scratch[NAOMI_VROM_MODEL_SCRATCH_WORDS];
+uint32_t naomi_vrom_model_words = 0;
 #endif
 
 const int shared_count[16]"""
@@ -435,15 +437,39 @@ old_model_at = """const uint32_t *SceneBuilder::model_at(uint32_t addr) const
 }"""
 new_model_at = """const uint32_t *SceneBuilder::model_at(uint32_t addr) const
 {
-\taddr &= 0xFFFFFF;
-\tif (addr < 0x100000) return poly + addr;
+	addr &= 0xFFFFFF;
+	if (addr < 0x100000) return poly + addr;
 #ifdef VF3_NAOMI
-\tif (naomi_model3_vrom_read_words(addr, naomi_vrom_model_scratch,
-\t        NAOMI_VROM_MODEL_SCRATCH_WORDS) != NAOMI_CART_VROM_OK)
-\t\treturn nullptr;
-\treturn naomi_vrom_model_scratch;
+	uint32_t loaded = 0;
+	uint32_t scan = 0;
+	naomi_vrom_model_words = 0;
+	while (loaded < NAOMI_VROM_MODEL_SCRATCH_WORDS) {
+		uint32_t chunk = NAOMI_VROM_MODEL_CHUNK_WORDS;
+		if (chunk > NAOMI_VROM_MODEL_SCRATCH_WORDS - loaded)
+			chunk = NAOMI_VROM_MODEL_SCRATCH_WORDS - loaded;
+		if (naomi_model3_vrom_read_words((addr + loaded) & 0xFFFFFF,
+		        naomi_vrom_model_scratch + loaded, chunk) != NAOMI_CART_VROM_OK)
+			return nullptr;
+		loaded += chunk;
+		while (scan + 7u <= loaded) {
+			const uint32_t *h = naomi_vrom_model_scratch + scan;
+			if (h[6] == 0) {
+				naomi_vrom_model_words = scan + 7u;
+				return naomi_vrom_model_scratch;
+			}
+			const uint32_t words = 7u +
+				(((h[0] & 0x40u) ? 4u : 3u) - shared_count[h[0] & 0xFu]) * 4u;
+			if (scan + words > loaded) break;
+			if (h[1] & 4u) {
+				naomi_vrom_model_words = scan + words;
+				return naomi_vrom_model_scratch;
+			}
+			scan += words;
+		}
+	}
+	return nullptr;
 #else
-\treturn vrom + addr;
+	return vrom + addr;
 #endif
 }"""
 if new_model_at not in scene:
@@ -509,7 +535,7 @@ if new_draw_end not in scene:
 
 old_draw_end_rom = "\t\tconst uint32_t *end_rom = vrom + 0x1000000;"
 new_draw_end_rom = """#ifdef VF3_NAOMI
-\t\tconst uint32_t *end_rom = vrom + NAOMI_VROM_MODEL_SCRATCH_WORDS;
+\t\tconst uint32_t *end_rom = vrom + naomi_vrom_model_words;
 #else
 \t\tconst uint32_t *end_rom = vrom + 0x1000000;
 #endif"""

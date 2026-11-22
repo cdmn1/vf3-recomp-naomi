@@ -22,18 +22,6 @@ static naomi_cart_vrom_status_t stream_words(const naomi_cart_image_layout_t *im
  return NAOMI_CART_VROM_OK;
 }
 
-typedef struct {
- uint8_t *destination;
- uint32_t index;
-} vrom_copy_context_t;
-
-static int copy_word(void *context,uint32_t word){
- vrom_copy_context_t *copy=(vrom_copy_context_t*)context;
- memcpy(copy->destination+(size_t)copy->index*4u,&word,4u);
- copy->index++;
- return 1;
-}
-
 naomi_cart_vrom_status_t naomi_cart_vrom_read_words(
  const naomi_cart_image_layout_t *image,uint32_t word_address,
  uint32_t word_count,void *destination,uint32_t destination_size,
@@ -41,8 +29,8 @@ naomi_cart_vrom_status_t naomi_cart_vrom_read_words(
  naomi_cart_dma_result_t *io_result){
  const naomi_cart_image_region_t *vrom;
  naomi_cart_dma_result_t last={0,0,0,0,0};
- vrom_copy_context_t copy;
- naomi_cart_vrom_status_t rc;
+ uint32_t emitted=0;
+ uint8_t *out=(uint8_t*)destination;
  if(!image||!destination||!word_count||word_count>NAOMI_CART_VROM_WORD_COUNT||
     word_count>UINT32_MAX/4u||destination_size<word_count*4u||
     !scratch||!aligned32(scratch)||scratch_size<NAOMI_CART_VROM_SCRATCH_SIZE||
@@ -51,12 +39,28 @@ naomi_cart_vrom_status_t naomi_cart_vrom_read_words(
  vrom=naomi_cart_image_find_region(image,NAOMI_CART_REGION_VROM);
  if(!vrom||vrom->size!=NAOMI_CART_VROM_LOGICAL_SIZE)
   return NAOMI_CART_VROM_INVALID;
- copy.destination=(uint8_t*)destination;
- copy.index=0;
- rc=stream_words(image,word_address,word_count,(uint8_t*)scratch,
-                 timeout_ms,copy_word,&copy,&last);
+ while(emitted<word_count){
+  uint32_t current=(word_address+emitted)&VROM_ADDRESS_MASK;
+  uint32_t logical=current&(NAOMI_CART_VROM_WORD_COUNT-1u);
+  uint32_t page_word=logical&~(VROM_PAGE_WORDS-1u);
+  uint32_t skip=logical-page_word;
+  uint32_t take=word_count-emitted;
+  uint32_t available=VROM_PAGE_WORDS-skip;
+  uint32_t read_words,read_bytes;
+  if(take>available)take=available;
+  read_words=(skip+take+7u)&~7u;
+  read_bytes=read_words*4u;
+  if(naomi_cart_image_read_region(image,NAOMI_CART_REGION_VROM,
+      page_word*4u,scratch,read_bytes,timeout_ms,&last)!=NAOMI_CART_IMAGE_OK){
+   if(io_result)*io_result=last;
+   return NAOMI_CART_VROM_IO_ERROR;
+  }
+  memcpy(out+(size_t)emitted*4u,(uint8_t*)scratch+(size_t)skip*4u,
+         (size_t)take*4u);
+  emitted+=take;
+ }
  if(io_result)*io_result=last;
- return rc;
+ return NAOMI_CART_VROM_OK;
 }
 
 naomi_cart_vrom_status_t naomi_cart_vrom_texture_port(const naomi_cart_image_layout_t *image,uint32_t word_address,uint32_t fifo_words_used,uint32_t fifo_capacity_words,void *scratch,uint32_t scratch_size,uint32_t timeout_ms,naomi_cart_vrom_word_sink_t sink,void *sink_context,naomi_cart_vrom_result_t *result,naomi_cart_dma_result_t *io_result){
