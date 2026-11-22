@@ -44,6 +44,8 @@ typedef struct {
 extern "C" {
 #endif
 
+naomi_vf3_image_status_t naomi_model3_mount_netdimm_image(void);
+
 naomi_vf3_image_status_t naomi_vf3_image_mount(
     naomi_vf3_image_t *image,
     void *fixed_crom, uint32_t fixed_crom_size,

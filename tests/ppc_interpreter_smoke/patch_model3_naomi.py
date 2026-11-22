@@ -10,7 +10,7 @@ path = pathlib.Path(sys.argv[1])
 source = path.read_text()
 
 include_anchor = '#include "model3.h"'
-include_patch = include_anchor + '\n#include "cart_vrom_bridge.h"'
+include_patch = include_anchor + '\n#include "cart_vrom_bridge.h"\n#include "vf3_image.h"'
 if 'cart_vrom_bridge.h' not in source:
     if source.count(include_anchor) != 1:
         raise SystemExit("expected exactly one model3.h include")
@@ -42,6 +42,40 @@ def replace_in_function(start_marker, end_marker, old, new, label):
     body = body.replace(old, new, 1)
     source = source[:start] + body + source[end:]
 
+
+replace_once(
+"""bool Model3::load(const std::string &zip, std::string &error)
+{
+	romset::result r = romset::load(zip, *profile);
+	if (!r.ok) {
+		error = r.error;
+		return false;
+	}
+	crom = std::move(r.crom);
+	banked = std::move(r.banked);
+	vrom = std::move(r.vrom);
+	sound_rom = std::move(r.sound);
+	samples = std::move(r.samples);""",
+"""bool Model3::load(const std::string &zip, std::string &error)
+{
+#ifdef VF3_NAOMI
+	(void)zip;
+	if (naomi_model3_mount_netdimm_image() != NAOMI_VF3_IMAGE_OK) {
+		error = "VF3NROM NetDIMM mount or region verification failed";
+		return false;
+	}
+#else
+	romset::result r = romset::load(zip, *profile);
+	if (!r.ok) {
+		error = r.error;
+		return false;
+	}
+	crom = std::move(r.crom);
+	banked = std::move(r.banked);
+	vrom = std::move(r.vrom);
+	sound_rom = std::move(r.sound);
+	samples = std::move(r.samples);
+#endif""", "Model3::load NetDIMM branch")
 
 replace_once(
 """void Model3::r3d_texture_port(unsigned, uint32_t data)

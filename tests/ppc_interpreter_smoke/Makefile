@@ -26,11 +26,11 @@ CPPFLAGS += -I$(SOFTFLOAT_DIR)/source/include -I$(SOFTFLOAT_DIR)/source/8086-SSE
 all: $(TARGET)
 rom: $(ROM)
 
-# Compile the upstream Model 3 board core and Naomi ROM mount/streaming adapters
+# Compile the upstream Model 3 core and Naomi ROM mount/streaming adapters
 # without linking or allocating the large emulated memory regions.
-model3-compile: model3.o cart_vrom_bridge.o vf3_image.o
+model3-compile: model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o
 
-model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h patch_model3_naomi.py ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/naomi_pvr_vector.h
+model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h patch_model3_naomi.py ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/vf3_image.h ../../platform/naomi/naomi_pvr_vector.h
 	python3 patch_model3_naomi.py $(VF3_RECOMP_DIR)/src/machine/model3.cpp
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -I$(VF3_RECOMP_DIR)/src/machine -c $< -o $@
 
@@ -39,6 +39,9 @@ cart_vrom_bridge.o: ../../platform/naomi/cart_vrom_bridge.cpp ../../platform/nao
 
 vf3_image.o: ../../platform/naomi/vf3_image.c ../../platform/naomi/vf3_image.h ../../platform/naomi/cart_vrom_bridge.h
 	kos-cc -O2 -c $< -o $@
+
+vf3_image_runtime.o: ../../platform/naomi/vf3_image_runtime.cpp ../../platform/naomi/vf3_image.h
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 
 ppc.o: $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp $(VF3_RECOMP_DIR)/src/ppc/ppc.h patch_ppc_softfloat.py
 	python3 patch_ppc_softfloat.py $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp
@@ -56,6 +59,6 @@ $(ROM): $(TARGET) $(NAOMIBINTOOL)
 include $(KOS_BASE)/Makefile.rules
 
 clean:
-	-rm -f $(TARGET) $(ROM) $(OBJS) model3.o cart_vrom_bridge.o vf3_image.o
+	-rm -f $(TARGET) $(ROM) $(OBJS) model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o
 
 .PHONY: all rom model3-compile clean

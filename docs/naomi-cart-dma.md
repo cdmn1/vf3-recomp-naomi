@@ -77,3 +77,9 @@ This is now a usable NetDIMM image-mount component, but it is not yet invoked by
 The Naomi KOS target exposes 16 MiB of PVR2 VRAM (the retail Dreamcast target exposes 8 MiB). KOS's `pvr_mem_malloc()` returns a 32-byte-aligned, SH-4-addressable VRAM pointer and `pvr_mem_available()` reports the pool remaining after PVR command/bin buffers have been reserved.
 
 The Naomi Model 3 build now substitutes a small vector-like PVR allocator for the upstream 8 MiB `tex_ram` vector. It allocates the same 2048×2048 16-bit backing store from the PVR pool, retains the existing indexed/iterator semantics used by the board core, and fails the load explicitly if the PVR allocator is not initialized or cannot supply the full 8 MiB. This moves that backing store out of the 32 MiB SH-4 main-RAM budget; it does not yet implement the final PVR2 texture conversion/render path.
+
+## Naomi Model 3 load path
+
+Under `VF3_NAOMI`, the patched upstream `Model3::load()` now bypasses the ZIP/desktop ROM loader and calls a persistent NetDIMM runtime mount. The runtime owns one aligned 8 MiB fixed-CROM buffer, the 256 KiB bank cache, a 64 KiB CRC scratch buffer, and the parsed image metadata. It validates the packed image, then leaves the large banked-CROM and VROM vectors empty; their bus accesses go through the bridges. The same load path allocates Model 3's 8 MiB texture backing in PVR2 VRAM instead of SH-4 main RAM.
+
+This gives the board core a Naomi-specific ROM-loading path without copying the fixed CROM twice or allocating the 64 MiB banked-CROM and 32 MiB VROM images. PVR initialization must happen before `Model3::load()`, because the texture backing is allocated from KOS's PVR memory pool. The board core and loader compile in CI; they have not yet been run together as a game on Flycast or Naomi hardware. The Naomi startup entrypoint, input/JVS integration, and PVR2 renderer remain to be completed.
