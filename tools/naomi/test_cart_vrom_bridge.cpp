@@ -1,5 +1,6 @@
 #include "cart_vrom_bridge.h"
 #include "cart_rom.h"
+#include "cart_vrom.h"
 
 #include <assert.h>
 #include <stdint.h>
