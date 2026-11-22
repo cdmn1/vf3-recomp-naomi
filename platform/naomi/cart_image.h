@@ -2,6 +2,10 @@
 #define VF3_NAOMI_CART_IMAGE_H
 
 #include "cart_image_format.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "cart_dma.h"
 
 #define NAOMI_CART_IMAGE_VERIFY_CHUNK 0x00010000u
@@ -30,5 +34,9 @@ naomi_cart_image_status_t naomi_cart_image_verify_region(
     const naomi_cart_image_layout_t *layout, uint32_t region_id,
     void *scratch, uint32_t scratch_size, uint32_t timeout_ms,
     uint32_t *actual_crc32, naomi_cart_dma_result_t *io_result);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

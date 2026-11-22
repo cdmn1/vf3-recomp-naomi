@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define NAOMI_CART_IMAGE_MAGIC "VF3NROM\0"
 #define NAOMI_CART_IMAGE_VERSION 1u
 #define NAOMI_CART_IMAGE_HEADER_SIZE 4096u
@@ -48,5 +52,9 @@ naomi_cart_image_format_status_t naomi_cart_image_parse_header(
     naomi_cart_image_layout_t *layout);
 const naomi_cart_image_region_t *naomi_cart_image_find_region(
     const naomi_cart_image_layout_t *layout, uint32_t region_id);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

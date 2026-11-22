@@ -2,6 +2,10 @@
 #define VF3_NAOMI_CART_DMA_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define NAOMI_CART_DMA_ALIGNMENT 32u
 #define NAOMI_CART_DMA_MAX_CHUNK 0x00400000u
 
@@ -27,4 +31,8 @@ typedef struct {
 naomi_cart_dma_status_t naomi_cart_dma_read(
     uint32_t source_offset, void *destination, uint32_t length,
     uint32_t timeout_ms, naomi_cart_dma_result_t *result);
+#ifdef __cplusplus
+}
+#endif
+
 #endif

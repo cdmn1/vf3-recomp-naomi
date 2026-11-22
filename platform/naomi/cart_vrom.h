@@ -3,6 +3,10 @@
 
 #include "cart_image.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define NAOMI_CART_VROM_LOGICAL_SIZE 0x02000000u
 #define NAOMI_CART_VROM_WORD_COUNT  0x00800000u
 #define NAOMI_CART_VROM_SCRATCH_SIZE 0x00010000u
@@ -33,5 +37,9 @@ naomi_cart_vrom_status_t naomi_cart_vrom_texture_port(
     void *scratch, uint32_t scratch_size, uint32_t timeout_ms,
     naomi_cart_vrom_word_sink_t sink, void *sink_context,
     naomi_cart_vrom_result_t *result, naomi_cart_dma_result_t *io_result);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -3,6 +3,10 @@
 
 #include "cart_image.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define NAOMI_CART_CROM_FIXED_SIZE 0x00800000u
 #define NAOMI_CART_CROM_BANK_SIZE  0x00800000u
 #define NAOMI_CART_CROM_BANK_COUNT 8u
@@ -46,5 +50,9 @@ static inline const uint8_t *naomi_cart_rom_fixed(const naomi_cart_rom_t *rom)
 {
     return rom && rom->fixed_valid ? rom->fixed_crom : 0;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
