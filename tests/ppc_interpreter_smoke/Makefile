@@ -20,17 +20,22 @@ NAOMIBINTOOL ?= $(KOS_BASE)/utils/naomibintool/naomibintool
 
 CXXFLAGS += -std=gnu++17 -O2
 CPPFLAGS += -I$(VF3_RECOMP_DIR)/src/ppc
+CPPFLAGS += -I../../platform/naomi
 CPPFLAGS += -I$(SOFTFLOAT_DIR)/source/include -I$(SOFTFLOAT_DIR)/source/8086-SSE
 
 all: $(TARGET)
 rom: $(ROM)
 
-# Compile the real upstream Model 3 board core for SH-4 without linking or
-# allocating its large emulated memory regions. This isolates target portability.
-model3-compile: model3.o
+# Compile the upstream Model 3 board core and the Naomi VROM adapter without
+# linking or allocating the large emulated memory regions.
+model3-compile: model3.o cart_vrom_bridge.o
 
-model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h
-	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -I$(VF3_RECOMP_DIR)/src/machine -c $< -o $@
+model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h patch_model3_naomi.py ../../platform/naomi/cart_vrom_bridge.h
+	python3 patch_model3_naomi.py $(VF3_RECOMP_DIR)/src/machine/model3.cpp
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -I$(VF3_RECOMP_DIR)/src/machine -c $< -o $@
+
+cart_vrom_bridge.o: ../../platform/naomi/cart_vrom_bridge.cpp ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/cart_vrom.h
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 
 ppc.o: $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp $(VF3_RECOMP_DIR)/src/ppc/ppc.h patch_ppc_softfloat.py
 	python3 patch_ppc_softfloat.py $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp
@@ -48,6 +53,6 @@ $(ROM): $(TARGET) $(NAOMIBINTOOL)
 include $(KOS_BASE)/Makefile.rules
 
 clean:
-	-rm -f $(TARGET) $(ROM) $(OBJS) model3.o
+	-rm -f $(TARGET) $(ROM) $(OBJS) model3.o cart_vrom_bridge.o
 
 .PHONY: all rom model3-compile clean
