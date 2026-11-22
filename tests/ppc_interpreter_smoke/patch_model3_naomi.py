@@ -158,7 +158,7 @@ replace_once(
 replace_once(
 """int Model3::hide_free_play_text()
 {
-	if (!free_play_text.empty()) return int(free_play_text.size());""",
+	if (!free_play_text.empty()) return int(free_play_text.size());   // (hidden already)""",
 """int Model3::hide_free_play_text()
 {
 #ifdef VF3_NAOMI
@@ -169,14 +169,16 @@ replace_once(
 	uint8_t *fixed_crom = crom.data();
 	size_t fixed_crom_size = crom.size();
 #endif
-	if (!free_play_text.empty()) return int(free_play_text.size());""", "hide_free_play_text entry")
+	if (!free_play_text.empty()) return int(free_play_text.size());   // (hidden already)""", "hide_free_play_text entry")
 
 replace_once(
 """const size_t CROM_AT = profile->program_at;
 	const Profile::FreePlayText &t = profile->free_play_text;
+	if (!t.free_play) return 0;
 	auto at = [&](size_t a) -> uint8_t & { return crom[(a + CROM_AT) ^ 3]; };""",
 """const size_t CROM_AT = profile->program_at;
 	const Profile::FreePlayText &t = profile->free_play_text;
+	if (!t.free_play) return 0;
 	auto at = [&](size_t a) -> uint8_t & { return fixed_crom[(a + CROM_AT) ^ 3]; };""",
 "hide_free_play_text CROM pointer")
 replace_once("a + CROM_AT + k >= crom.size()",
