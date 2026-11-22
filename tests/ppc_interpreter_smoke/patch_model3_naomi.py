@@ -412,23 +412,19 @@ if '#include "cart_vrom_bridge.h"' not in scene:
     scene = scene.replace('#include "../machine/model3.h"',
         '#include "../machine/model3.h"\n#ifdef VF3_NAOMI\n#include "cart_vrom_bridge.h"\n#include "cart_vrom.h"\n#include <cstdint>\n#endif', 1)
 
-old_scene_namespace = """namespace {
-
-const int shared_count[16]"""
-new_scene_namespace = """namespace {
-
-#ifdef VF3_NAOMI
+old_shared_line = "const int shared_count[16] = { 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4 };"
+new_shared_line = """#ifdef VF3_NAOMI
 constexpr uint32_t NAOMI_VROM_MODEL_SCRATCH_WORDS = 0x00020000u;
 constexpr uint32_t NAOMI_VROM_MODEL_CHUNK_WORDS = 0x00001000u;
 alignas(32) uint32_t naomi_vrom_model_scratch[NAOMI_VROM_MODEL_SCRATCH_WORDS];
 uint32_t naomi_vrom_model_words = 0;
 #endif
 
-const int shared_count[16]"""
-if new_scene_namespace not in scene:
-    if scene.count(old_scene_namespace) != 1:
-        raise SystemExit("expected SceneBuilder anonymous namespace")
-    scene = scene.replace(old_scene_namespace, new_scene_namespace, 1)
+const int shared_count[16] = { 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4 };"""
+if new_shared_line not in scene:
+    if scene.count(old_shared_line) != 1:
+        raise SystemExit("expected SceneBuilder shared vertex-count table")
+    scene = scene.replace(old_shared_line, new_shared_line, 1)
 
 old_model_at = """const uint32_t *SceneBuilder::model_at(uint32_t addr) const
 {
