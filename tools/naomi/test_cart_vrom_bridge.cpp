@@ -85,6 +85,8 @@ int main()
         uint32_t words[3] = {0x11223344u, 0x11223345u, 0x11223346u};
         memcpy(cart + vrom_offset, &vrom_header, 4);
         memcpy(cart + vrom_offset + 4, words, sizeof(words));
+        write_le32(cart + vrom_offset + NAOMI_CART_VROM_LOGICAL_SIZE - 4u,
+                   0xDEADBEEFu);
     }
 
     header = cart + header_offset;
@@ -120,6 +122,15 @@ int main()
     assert(naomi_model3_crom_read32(4) == 0x17161514u);
     assert(naomi_model3_crom_select_bank(0xF7));
     assert(naomi_model3_crom_read8(0) == 0);
+
+    alignas(32) uint32_t vrom_words[16] = {};
+    assert(naomi_model3_vrom_read_words(0, vrom_words, 16) == NAOMI_CART_VROM_OK);
+    assert(vrom_words[0] == 30 && vrom_words[1] == 0x11223344u &&
+           vrom_words[2] == 0x11223345u && vrom_words[3] == 0x11223346u);
+    assert(naomi_model3_vrom_read_words(1, vrom_words, 4) == NAOMI_CART_VROM_OK);
+    assert(vrom_words[0] == 0x11223344u && vrom_words[1] == 0x11223345u);
+    assert(naomi_model3_vrom_read_words(0x007FFFFFu, vrom_words, 2) == NAOMI_CART_VROM_OK);
+    assert(vrom_words[0] == 0xDEADBEEFu && vrom_words[1] == 30);
 
     std::vector<uint32_t> fifo;
     assert(naomi_model3_vrom_port(0, &fifo));

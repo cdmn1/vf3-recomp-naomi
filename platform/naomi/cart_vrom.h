@@ -26,6 +26,15 @@ typedef struct {
     uint32_t emitted_words;
 } naomi_cart_vrom_result_t;
 
+/* Copies an arbitrary 24-bit VROM word range into caller-owned memory.
+ * The 32 MiB logical VROM region mirrors across the upstream 64 MiB address
+ * range. Destination need not be DMA-aligned; scratch must be 32-byte aligned. */
+naomi_cart_vrom_status_t naomi_cart_vrom_read_words(
+    const naomi_cart_image_layout_t *image, uint32_t word_address,
+    uint32_t word_count, void *destination, uint32_t destination_size,
+    void *scratch, uint32_t scratch_size, uint32_t timeout_ms,
+    naomi_cart_dma_result_t *io_result);
+
 /* Streams the upstream Real3D texture-port operation without retaining VROM.
  * word_address is the original 24-bit word address. The packed image stores
  * one 32 MiB VROM copy; the upstream 64 MiB allocation mirrors it twice.

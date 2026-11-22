@@ -12,6 +12,7 @@ extern "C" {
 /* Bind the mounted NetDIMM image before the Model 3 board begins execution. */
 void naomi_model3_vrom_bind(const naomi_cart_image_layout_t *image);
 int naomi_model3_vrom_port(uint32_t word_address, void *texture_fifo);
+int naomi_model3_vrom_read_words(uint32_t word_address, void *destination, uint32_t word_count);
 int naomi_model3_vrom_last_status(void);
 
 /* Bind the initialized resident-fixed-CROM / bank-page-cache state. */

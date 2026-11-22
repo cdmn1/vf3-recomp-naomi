@@ -50,6 +50,19 @@ extern "C" int naomi_model3_vrom_port(uint32_t word_address, void *texture_fifo)
     return 1;
 }
 
+extern "C" int naomi_model3_vrom_read_words(
+    uint32_t word_address, void *destination, uint32_t word_count)
+{
+    naomi_cart_dma_result_t io = {};
+    if (!bound_image || !destination || !word_count ||
+        word_count > UINT32_MAX / 4u)
+        return NAOMI_CART_VROM_INVALID;
+    last_vrom_status = naomi_cart_vrom_read_words(
+        bound_image, word_address, word_count, destination, word_count * 4u,
+        scratch, sizeof(scratch), 1000u, &io);
+    return last_vrom_status;
+}
+
 extern "C" int naomi_model3_vrom_last_status(void)
 {
     return last_vrom_status;

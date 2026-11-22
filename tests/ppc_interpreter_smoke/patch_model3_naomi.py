@@ -406,3 +406,139 @@ if new_prepare not in raster_cpp:
 
 raster_cpp_path.write_text(raster_cpp)
 
+scene_path = path.parent.parent / "video" / "r3d_scene.cpp"
+scene = scene_path.read_text()
+if '#include "cart_vrom_bridge.h"' not in scene:
+    scene = scene.replace('#include "../machine/model3.h"',
+        '#include "../machine/model3.h"\n#ifdef VF3_NAOMI\n#include "cart_vrom_bridge.h"\n#include "cart_vrom.h"\n#include <cstdint>\n#endif', 1)
+
+old_scene_namespace = """namespace {
+
+const int shared_count[16]"""
+new_scene_namespace = """namespace {
+
+#ifdef VF3_NAOMI
+constexpr uint32_t NAOMI_VROM_MODEL_SCRATCH_WORDS = 0x00020000u;
+alignas(32) uint32_t naomi_vrom_model_scratch[NAOMI_VROM_MODEL_SCRATCH_WORDS];
+#endif
+
+const int shared_count[16]"""
+if new_scene_namespace not in scene:
+    if scene.count(old_scene_namespace) != 1:
+        raise SystemExit("expected SceneBuilder anonymous namespace")
+    scene = scene.replace(old_scene_namespace, new_scene_namespace, 1)
+
+old_model_at = """const uint32_t *SceneBuilder::model_at(uint32_t addr) const
+{
+\taddr &= 0xFFFFFF;
+\treturn addr < 0x100000 ? poly + addr : vrom + addr;
+}"""
+new_model_at = """const uint32_t *SceneBuilder::model_at(uint32_t addr) const
+{
+\taddr &= 0xFFFFFF;
+\tif (addr < 0x100000) return poly + addr;
+#ifdef VF3_NAOMI
+\tif (naomi_model3_vrom_read_words(addr, naomi_vrom_model_scratch,
+\t        NAOMI_VROM_MODEL_SCRATCH_WORDS) != NAOMI_CART_VROM_OK)
+\t\treturn nullptr;
+\treturn naomi_vrom_model_scratch;
+#else
+\treturn vrom + addr;
+#endif
+}"""
+if new_model_at not in scene:
+    if scene.count(old_model_at) != 1:
+        raise SystemExit("expected exactly one SceneBuilder::model_at")
+    scene = scene.replace(old_model_at, new_model_at, 1)
+
+old_vrom_bind = "\tvrom = reinterpret_cast<const uint32_t *>(board.vrom.data());"
+new_vrom_bind = """#ifdef VF3_NAOMI
+\tvrom = naomi_vrom_model_scratch;
+#else
+\tvrom = reinterpret_cast<const uint32_t *>(board.vrom.data());
+#endif"""
+if new_vrom_bind not in scene:
+    if scene.count(old_vrom_bind) != 1:
+        raise SystemExit("expected exactly one SceneBuilder VROM binding")
+    scene = scene.replace(old_vrom_bind, new_vrom_bind, 1)
+
+old_draw_prefix = """\tconst uint32_t *data = model_at(addr);
+\tModel m;
+\tm.addr = addr;
+\tm.matrix = cur;
+\tm.alpha = attr.alpha;
+\tm.scale = attr.scale;
+\tm.page = attr.page;
+\tm.node_path = path;"""
+new_draw_prefix = """\tModel m;
+\tm.addr = addr;
+\tm.matrix = cur;
+\tm.alpha = attr.alpha;
+\tm.scale = attr.scale;
+\tm.page = attr.page;
+\tm.node_path = path;
+\tbool cached_rom = false;
+\tif (addr >= 0x100000) {
+\t\tauto cached = rom_cache.find(addr);
+\t\tif (cached != rom_cache.end()) {
+\t\t\tm.meshes = cached->second;
+\t\t\tcached_rom = true;
+\t\t}
+\t}
+\tif (!cached_rom) {
+\t\tconst uint32_t *data = model_at(addr);
+\t\tif (!data) return;"""
+if new_draw_prefix not in scene:
+    if scene.count(old_draw_prefix) != 1:
+        raise SystemExit("expected exactly one SceneBuilder::draw_model prefix")
+    scene = scene.replace(old_draw_prefix, new_draw_prefix, 1)
+
+old_draw_end = """\t} else {
+\t\tm.meshes = parse(data, true);
+\t}
+\t// (the marker under the notice:"""
+new_draw_end = """\t} else {
+\t\tm.meshes = parse(data, true);
+\t}
+\t}
+\t// (the marker under the notice:"""
+if new_draw_end not in scene:
+    if scene.count(old_draw_end) != 1:
+        raise SystemExit("expected exactly one SceneBuilder::draw_model end")
+    scene = scene.replace(old_draw_end, new_draw_end, 1)
+
+old_draw_end_rom = "\t\tconst uint32_t *end_rom = vrom + 0x1000000;"
+new_draw_end_rom = """#ifdef VF3_NAOMI
+\t\tconst uint32_t *end_rom = vrom + NAOMI_VROM_MODEL_SCRATCH_WORDS;
+#else
+\t\tconst uint32_t *end_rom = vrom + 0x1000000;
+#endif"""
+if new_draw_end_rom not in scene:
+    if scene.count(old_draw_end_rom) != 1:
+        raise SystemExit("expected exactly one SceneBuilder model scan end")
+    scene = scene.replace(old_draw_end_rom, new_draw_end_rom, 1)
+
+old_parse_ends = "\tconst uint32_t *end_lo = poly + 0x100000, *end_rom = vrom + 0x1000000;"
+new_parse_ends = """\tconst uint32_t *end_lo = poly + 0x100000;
+#ifdef VF3_NAOMI
+\tconst uint32_t *end_rom = vrom + NAOMI_VROM_MODEL_SCRATCH_WORDS;
+#else
+\tconst uint32_t *end_rom = vrom + 0x1000000;
+#endif"""
+if new_parse_ends not in scene:
+    if scene.count(old_parse_ends) != 1:
+        raise SystemExit("expected exactly one SceneBuilder parse end pointer")
+    scene = scene.replace(old_parse_ends, new_parse_ends, 1)
+
+old_poly_range = "\tconst bool in_poly_ram = src >= poly && src < end_lo;"
+new_poly_range = """\tconst std::uintptr_t src_address = reinterpret_cast<std::uintptr_t>(src);
+\tconst std::uintptr_t poly_address = reinterpret_cast<std::uintptr_t>(poly);
+\tconst bool in_poly_ram = src_address >= poly_address && src_address < poly_address + 0x100000u;"""
+if new_poly_range not in scene:
+    if scene.count(old_poly_range) != 1:
+        raise SystemExit("expected exactly one SceneBuilder polygon RAM pointer test")
+    scene = scene.replace(old_poly_range, new_poly_range, 1)
+
+scene_path.write_text(scene)
+
+

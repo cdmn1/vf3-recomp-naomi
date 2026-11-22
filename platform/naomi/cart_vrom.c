@@ -1,5 +1,6 @@
 #include "cart_vrom.h"
 #include <stdint.h>
+#include <string.h>
 #define VROM_ADDRESS_MASK 0x00FFFFFFu
 #define VROM_PAGE_WORDS (NAOMI_CART_VROM_SCRATCH_SIZE / 4u)
 static int aligned32(const void *p){return (((uintptr_t)p)&31u)==0u;}
@@ -20,6 +21,44 @@ static naomi_cart_vrom_status_t stream_words(const naomi_cart_image_layout_t *im
  if(io_result) *io_result=last;
  return NAOMI_CART_VROM_OK;
 }
+
+typedef struct {
+ uint8_t *destination;
+ uint32_t index;
+} vrom_copy_context_t;
+
+static int copy_word(void *context,uint32_t word){
+ vrom_copy_context_t *copy=(vrom_copy_context_t*)context;
+ memcpy(copy->destination+(size_t)copy->index*4u,&word,4u);
+ copy->index++;
+ return 1;
+}
+
+naomi_cart_vrom_status_t naomi_cart_vrom_read_words(
+ const naomi_cart_image_layout_t *image,uint32_t word_address,
+ uint32_t word_count,void *destination,uint32_t destination_size,
+ void *scratch,uint32_t scratch_size,uint32_t timeout_ms,
+ naomi_cart_dma_result_t *io_result){
+ const naomi_cart_image_region_t *vrom;
+ naomi_cart_dma_result_t last={0,0,0,0,0};
+ vrom_copy_context_t copy;
+ naomi_cart_vrom_status_t rc;
+ if(!image||!destination||!word_count||word_count>NAOMI_CART_VROM_WORD_COUNT||
+    word_count>UINT32_MAX/4u||destination_size<word_count*4u||
+    !scratch||!aligned32(scratch)||scratch_size<NAOMI_CART_VROM_SCRATCH_SIZE||
+    !timeout_ms)
+  return NAOMI_CART_VROM_INVALID;
+ vrom=naomi_cart_image_find_region(image,NAOMI_CART_REGION_VROM);
+ if(!vrom||vrom->size!=NAOMI_CART_VROM_LOGICAL_SIZE)
+  return NAOMI_CART_VROM_INVALID;
+ copy.destination=(uint8_t*)destination;
+ copy.index=0;
+ rc=stream_words(image,word_address,word_count,(uint8_t*)scratch,
+                 timeout_ms,copy_word,&copy,&last);
+ if(io_result)*io_result=last;
+ return rc;
+}
+
 naomi_cart_vrom_status_t naomi_cart_vrom_texture_port(const naomi_cart_image_layout_t *image,uint32_t word_address,uint32_t fifo_words_used,uint32_t fifo_capacity_words,void *scratch,uint32_t scratch_size,uint32_t timeout_ms,naomi_cart_vrom_word_sink_t sink,void *sink_context,naomi_cart_vrom_result_t *result,naomi_cart_dma_result_t *io_result){
  const naomi_cart_image_region_t *vrom;uint32_t header,declared,available,emit;naomi_cart_vrom_result_t r={0,0};naomi_cart_dma_result_t last={0,0,0,0,0};naomi_cart_vrom_status_t stream_rc;
  if(result)*result=r;
