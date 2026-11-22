@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vector>
 
 static uint8_t *cart;
 
@@ -32,6 +33,7 @@ int main()
 {
     const uint32_t fixed_offset = 0x1000u;
     const uint32_t banked_offset = 0x00801000u;
+    const uint32_t vrom_offset = 0x04801000u;
     naomi_cart_image_layout_t image = {};
     naomi_cart_rom_t rom;
     naomi_cart_dma_result_t io = {};
@@ -48,6 +50,12 @@ int main()
     image.regions[1].id = NAOMI_CART_REGION_BANKED_CROM;
     image.regions[1].offset = banked_offset;
     image.regions[1].size = NAOMI_CART_CROM_BANK_SIZE * NAOMI_CART_CROM_BANK_COUNT;
+    image.regions[2].id = NAOMI_CART_REGION_VROM;
+    image.regions[2].offset = vrom_offset;
+    image.regions[2].size = NAOMI_CART_VROM_LOGICAL_SIZE;
+    { uint32_t header = 30, words[3] = {0x11223344u, 0x11223345u, 0x11223346u};
+      memcpy(cart + vrom_offset, &header, 4);
+      memcpy(cart + vrom_offset + 4, words, sizeof(words)); }
 
     for (uint32_t bank = 0; bank < NAOMI_CART_CROM_BANK_COUNT; ++bank) {
         uint8_t *p = cart + banked_offset + bank * NAOMI_CART_CROM_BANK_SIZE;
@@ -70,6 +78,14 @@ int main()
 
     assert(naomi_model3_crom_select_bank(0xF7)); /* logical bank 8 mirrors bank 0 */
     assert(naomi_model3_crom_read8(0) == 0);
+
+    naomi_model3_vrom_bind(&image);
+    std::vector<uint32_t> fifo;
+    assert(naomi_model3_vrom_port(0, &fifo));
+    assert(naomi_model3_vrom_last_status() == NAOMI_CART_VROM_OK);
+    assert(fifo.size() == 4);
+    assert(fifo[0] == 30 && fifo[1] == 0x11223344u &&
+           fifo[2] == 0x11223345u && fifo[3] == 0x11223346u);
 
     free(cart);
     free(fixed);
