@@ -384,5 +384,25 @@ if "void Raster::resize_geometry_only" not in raster_cpp:
     if raster_cpp.count(anchor) != 1:
         raise SystemExit("expected exactly one Raster::alloc definition")
     raster_cpp = raster_cpp.replace(anchor, geometry_method + anchor, 1)
+
+old_prepare = """\t\t\t\tconst int parts = int(std::min<size_t>(items.size(), 64));
+\t\t\t\tif (parts_out.size() < size_t(parts)) parts_out.resize(size_t(parts));
+\t\t\t\tparallel_tasks(parts, [&](int k) {
+\t\t\t\t\tstd::vector<Tri> &out = parts_out[size_t(k)];
+\t\t\t\t\tout.clear();
+\t\t\t\t\tconst size_t a = items.size() * size_t(k) / size_t(parts), e = items.size() * size_t(k + 1) / size_t(parts);
+\t\t\t\t\tfor (size_t i = a; i < e; i++) prepare_mesh(items[i], out);
+\t\t\t\t});
+\t\t\t\tfor (int k = 0; k < parts; k++) tris.insert(tris.end(), parts_out[size_t(k)].begin(), parts_out[size_t(k)].end());"""
+new_prepare = """#ifdef VF3_NAOMI
+\t\t\t\tfor (int item : items) prepare_mesh(item, tris);
+#else
+""" + old_prepare + """
+#endif"""
+if new_prepare not in raster_cpp:
+    if raster_cpp.count(old_prepare) != 1:
+        raise SystemExit("expected exactly one parallel Raster::prepare batch")
+    raster_cpp = raster_cpp.replace(old_prepare, new_prepare, 1)
+
 raster_cpp_path.write_text(raster_cpp)
 

@@ -86,6 +86,6 @@ This gives the board core a Naomi-specific ROM-loading path without copying the 
 
 ## PVR2 renderer preparation path
 
-The Naomi build now also compiles the upstream Real3D scene builder and raster geometry-preparation code. A Naomi-only `Raster::resize_geometry_only()` sets the 496×384 projection and clipping dimensions while releasing/avoiding the CPU colour, depth and stencil buffers. The ordinary `resize()` path still allocates those buffers if the desktop CPU renderer is used later. Naomi's `parallel.h` helpers execute sequentially, avoiding desktop worker threads on the single SH-4.
+The Naomi build now also compiles the upstream Real3D scene builder and raster geometry-preparation code. On Naomi, raster preparation appends triangles directly to the final draw vector instead of building per-worker temporary vectors, avoiding duplicate triangle storage. A Naomi-only `Raster::resize_geometry_only()` sets the 496×384 projection and clipping dimensions while releasing/avoiding the CPU colour, depth and stencil buffers. The ordinary `resize()` path still allocates those buffers if the desktop CPU renderer is used later. Naomi's `parallel.h` helpers execute sequentially, avoiding desktop worker threads on the single SH-4.
 
 The future PVR2 backend can therefore consume `SceneBuilder` output and `Raster::prepare()`'s clipped triangles, draw batches and per-viewport data without allocating the CPU rasterizer's full pixel buffers. This compiles the geometry preparation stage; it does not yet draw the scene on PVR2.
