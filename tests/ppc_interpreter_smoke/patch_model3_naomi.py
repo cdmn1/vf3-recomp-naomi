@@ -229,8 +229,8 @@ replace_in_function(
 "hide_free_play_text CROM pointer")
 replace_in_function(
 "int Model3::hide_free_play_text()", "int Model3::set_dural",
+"			if (a + CROM_AT + k >= crom.size() || at(a + k) != uint8_t(t[k])) return false;",
 "			if (a + CROM_AT + k >= fixed_crom_size || at(a + k) != uint8_t(t[k])) return false;",
-"		if (a + CROM_AT + k >= fixed_crom_size || at(a + k) != uint8_t(t[k])) return false;",
 "hide_free_play_text CROM bounds")
 
 replace_once(
