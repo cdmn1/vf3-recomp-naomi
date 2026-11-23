@@ -15,6 +15,21 @@
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
+// The storage/board probe does not need the production recompiler entry map.
+// Supply only the VF3 profile fields used by Model3::load() in this test link.
+namespace m3 {
+const Profile VF3_REV_D = [] {
+    Profile p{};
+    p.set = "vf3";
+    p.title = "Virtua Fighter 3 Naomi integration";
+    p.name = "Virtua Fighter 3";
+    p.online = true;
+    p.program_at = 0x710000u;
+    p.program_size = 0x0A0000u;
+    return p;
+}();
+}
+
 // This probe mounts the synthetic NetDIMM image, initializes the real Model3
 // board storage, and invokes the production SceneBuilder parser/cache.
 
