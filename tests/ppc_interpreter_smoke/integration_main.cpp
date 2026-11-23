@@ -44,6 +44,7 @@ static const uint32_t expected_model[19] = {
 struct Results {
     bool mount = false;
     bool board = false;
+    bool board_load = false;
     bool crom = false;
     bool vrom = false;
     bool scene = false;
@@ -52,6 +53,9 @@ struct Results {
     size_t meshes = 0;
     size_t vertices = 0;
     size_t cached = 0;
+    size_t ram_bytes = 0, tile_bytes = 0, cull_lo_words = 0;
+    size_t cull_hi_words = 0, poly_words = 0, fifo_capacity = 0;
+    size_t tex_words = 0;
 };
 
 static Results run_integration()
@@ -64,7 +68,15 @@ static Results run_integration()
 
     m3::Model3 board;
     std::string error;
-    if (board.load("", error)) {
+    r.board_load = board.load("", error);
+    r.ram_bytes = board.ram.size();
+    r.tile_bytes = board.tile_ram.size();
+    r.cull_lo_words = board.cull_lo.size();
+    r.cull_hi_words = board.cull_hi.size();
+    r.poly_words = board.poly_ram.size();
+    r.fifo_capacity = board.tex_fifo.capacity();
+    r.tex_words = board.tex_ram.size();
+    if (r.board_load) {
         r.board = board.ram.size() == 0x800000u &&
                   board.backup.size() == 0x20000u &&
                   board.security.size() == 0x20000u &&
@@ -160,6 +172,7 @@ static void draw_screen(const Results &r)
     draw_text(40, 48, "VF3 NAOMI - MODEL3 INTEGRATION");
     draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
     draw_text(40, 136, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
+    draw_text(40, 156, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
     draw_text(40, 176, r.crom ? "FIXED/BANKED CROM: PASS" : "FIXED/BANKED CROM: FAIL");
     draw_text(40, 216, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
     draw_text(40, 256, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
@@ -172,7 +185,13 @@ static void draw_screen(const Results &r)
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices),
         static_cast<unsigned>(r.cached));
     draw_text(40, 384, line);
-    draw_text(40, 448, "SYNTHETIC ROM DATA - NO GAME ASSETS");
+    snprintf(line, sizeof(line), "RAM:%u TILE:%u", static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes));
+    draw_text(40, 408, line);
+    snprintf(line, sizeof(line), "CULL:%u/%u POLY:%u", static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words), static_cast<unsigned>(r.poly_words));
+    draw_text(40, 432, line);
+    snprintf(line, sizeof(line), "FIFO:%u TEX:%u", static_cast<unsigned>(r.fifo_capacity), static_cast<unsigned>(r.tex_words));
+    draw_text(40, 456, line);
+    draw_text(40, 480, "SYNTHETIC ROM DATA - NO GAME ASSETS");
     pvr_list_finish();
     pvr_scene_finish();
 }
