@@ -46,6 +46,7 @@ struct Results {
     bool board = false;
     bool board_load = false;
     bool power_ppc = false;
+    bool crom_bus = false;
     bool crom = false;
     bool vrom = false;
     bool scene = false;
@@ -114,6 +115,23 @@ static Results run_integration()
                       board.cpu.s.r[4] == 5 &&
                       board.cpu.s.r[5] == 12 &&
                       !board.cpu.s.fatal;
+
+        // Exercise PPC load/store instructions through the attached Model3 bus:
+        // read fixed CROM, write the active-low CROM bank register, then read banked CROM.
+        program[0] = 0x3CC0FF80u; // lis r6, 0xFF80
+        program[1] = 0x80E60000u; // lwz r7, 0(r6)
+        program[2] = 0x3D00F010u; // lis r8, 0xF010
+        program[3] = 0x392000FCu; // li r9, 0xFC (select bank 3)
+        program[4] = 0x99280008u; // stb r9, 8(r8) (CROM bank register)
+        program[5] = 0x3D40FF00u; // lis r10, 0xFF00
+        program[6] = 0x816A0000u; // lwz r11, 0(r10)
+        board.cpu.s.pc = 0;
+        board.cpu.s.npc = 0;
+        const int bus_executed = board.cpu.execute(7);
+        r.crom_bus = bus_executed == 7 &&
+                     board.cpu.s.r[7] == 0x13579BDFu &&
+                     board.cpu.s.r[11] == 0x2468ACE0u &&
+                     !board.cpu.s.fatal;
     }
 
     const uint8_t *fixed = naomi_model3_crom_fixed();
@@ -204,6 +222,7 @@ static void draw_screen(const Results &r)
     draw_text(40, 176, r.crom ? "FIXED/BANKED CROM: PASS" : "FIXED/BANKED CROM: FAIL");
     draw_text(40, 196, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
     draw_text(40, 216, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
+    draw_text(40, 236, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
     draw_text(40, 256, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
