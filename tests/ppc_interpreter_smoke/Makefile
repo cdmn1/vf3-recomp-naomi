@@ -45,7 +45,7 @@ model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -ffunction-sections -fdata-sections -c $< -o $@
 
 cart_vrom_bridge.o: ../../platform/naomi/cart_vrom_bridge.cpp ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/cart_vrom.h ../../platform/naomi/cart_rom.h
-	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -ffunction-sections -fdata-sections -c $< -o $@
 
 vf3_image.o: ../../platform/naomi/vf3_image.c ../../platform/naomi/vf3_image.h ../../platform/naomi/cart_vrom_bridge.h
 	kos-cc -O2 -c $< -o $@
@@ -69,7 +69,7 @@ cart_vrom.o: ../../platform/naomi/cart_vrom.c ../../platform/naomi/cart_vrom.h .
 	kos-cc -O2 -c $< -o $@
 
 r3d_scene.o: $(VF3_RECOMP_DIR)/src/video/r3d_scene.cpp $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/video/parallel.h ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/cart_vrom.h model3.o
-	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -ffunction-sections -fdata-sections -c $< -o $@
 
 r3d_raster.o: $(VF3_RECOMP_DIR)/src/video/r3d_raster.cpp $(VF3_RECOMP_DIR)/src/video/r3d_raster.h $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/video/parallel.h model3.o
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
