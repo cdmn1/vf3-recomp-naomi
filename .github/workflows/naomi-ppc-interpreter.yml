@@ -26,11 +26,6 @@ jobs:
       - name: Check out VF3 Recomp Naomi
         uses: actions/checkout@v4
 
-      - name: Test synthetic VROM integration image generator
-        run: |
-          set -eo pipefail
-          python3 -m unittest tools/naomi/test_make_vrom_integration_image.py
-
 
       - name: Check out pinned VF3 Recomp source
         id: vf3-source
@@ -149,6 +144,11 @@ jobs:
           . "$KOS_BASE/environ.sh"
           export KOS_INC_PATHS_CPP=""
           make -C "$KOS_BASE" -j2
+
+      - name: Test synthetic VROM integration image generator
+        run: |
+          set -eo pipefail
+          python3 -m unittest tools/naomi/test_make_vrom_integration_image.py
 
       - name: Archive compiled Naomi KOS tree
         if: steps.kos-cache.outputs.cache-hit != 'true'
