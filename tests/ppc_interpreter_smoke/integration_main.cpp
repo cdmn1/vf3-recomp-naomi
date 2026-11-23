@@ -45,6 +45,7 @@ struct Results {
     bool mount = false;
     bool board = false;
     bool board_load = false;
+    bool power_ppc = false;
     bool crom = false;
     bool vrom = false;
     bool scene = false;
@@ -94,6 +95,25 @@ static Results run_integration()
                   board.poly_ram.size() == 0x400000u / 4u &&
                   board.tex_fifo.capacity() >= 0x100000u / 4u &&
                   board.tex_ram.size() == 2048u * 2048u;
+    }
+
+    if (r.board_load) {
+        // Exercise the real board power-on/reset path, then execute a tiny
+        // synthetic PPC program through the CPU attached to Model3's bus/RAM.
+        board.power_on();
+        uint32_t *program = reinterpret_cast<uint32_t *>(board.ram.data());
+        program[0] = 0x38600007u;
+        program[1] = 0x38800005u;
+        program[2] = 0x7CA32214u;
+        board.cpu.s.pc = 0;
+        board.cpu.s.npc = 0;
+        const int executed = board.cpu.execute(3);
+        r.power_ppc = executed == 3 &&
+                      board.cpu.s.total_cycles == 3 &&
+                      board.cpu.s.r[3] == 7 &&
+                      board.cpu.s.r[4] == 5 &&
+                      board.cpu.s.r[5] == 12 &&
+                      !board.cpu.s.fatal;
     }
 
     const uint8_t *fixed = naomi_model3_crom_fixed();
@@ -182,6 +202,7 @@ static void draw_screen(const Results &r)
     draw_text(40, 136, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
     draw_text(40, 156, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
     draw_text(40, 176, r.crom ? "FIXED/BANKED CROM: PASS" : "FIXED/BANKED CROM: FAIL");
+    draw_text(40, 196, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
     draw_text(40, 216, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
     draw_text(40, 256, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
     char line[64];

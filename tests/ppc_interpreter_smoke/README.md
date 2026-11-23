@@ -31,6 +31,12 @@ synthetic model through the patched upstream `SceneBuilder::model_at()` and
 polygon parser. It repeats the model request to check the parsed-ROM cache.
 Results are shown on screen; no serial connection is used.
 
+After the board-load checks, the probe also calls the real `Model3::power_on()`
+path and executes a three-instruction synthetic PPC program using the CPU
+instance attached to the Model 3 board's own RAM and bus. This validates the
+board reset/power-on wiring and PPC-to-board memory attachment; it is not the
+commercial VF3 boot program.
+
 This validates board storage initialization and the NetDIMM/SceneBuilder
 integration, but it does not call the board's power-on sequence, execute the
 VF3 PowerPC program, or validate the Naomi PowerVR2 game renderer.
