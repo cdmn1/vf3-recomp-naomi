@@ -34,11 +34,13 @@ Results are shown on screen; no serial connection is used.
 After the board-load checks, the probe calls the real `Model3::power_on()` path
 and executes synthetic PPC programs through the CPU attached to the board.
 The programs check arithmetic, load fixed CROM, write the active-low CROM bank
-register, and load banked CROM through the board bus. Distinct marker words in
-the synthetic fixed and banked CROM regions make the bus checks observable.
+register, load banked CROM through the board bus, and round-trip a word through
+the mapped Real3D tile RAM window. Distinct marker words in the synthetic
+fixed CROM and selected bank 3 make the CROM bus checks observable.
 These are not the commercial VF3 boot program or game assets.
 
-This validates board storage initialization, PPC execution and mapped CROM
-reads through the NetDIMM bridge, plus NetDIMM/SceneBuilder integration. It
+This validates board storage initialization, PPC execution, mapped fixed/banked
+CROM reads through the NetDIMM bridge, a mapped Real3D tile RAM read/write, and
+NetDIMM/SceneBuilder integration. It
 does not execute the VF3 PowerPC program or validate the Naomi PowerVR2 game
 renderer.
