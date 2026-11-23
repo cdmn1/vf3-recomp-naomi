@@ -311,6 +311,17 @@ if new_texture_field not in header:
         raise SystemExit("expected exactly one Model 3 texture RAM field")
     header = header.replace(old_texture_field, new_texture_field, 1)
 
+test_decl = "\tsize_t cached() const { return rom_cache.size(); }";
+test_decl_naomi = test_decl + """
+#ifdef VF3_NAOMI
+\tbool naomi_test_vrom_model(uint32_t addr, const uint32_t *polygon_ram,
+\t                           size_t *mesh_count, size_t *vertex_count);
+#endif"""
+if test_decl_naomi not in header:
+    if header.count(test_decl) != 1:
+        raise SystemExit("expected exactly one SceneBuilder cache accessor")
+    header = header.replace(test_decl, test_decl_naomi, 1)
+
 header_path.write_text(header)
 
 # The Naomi SH-4 runs the scene preparation serially. Keep the portable helpers,
@@ -572,6 +583,40 @@ if new_next_id not in scene:
     if scene.count(old_next_id) != 1:
         raise SystemExit("expected exactly one SceneBuilder atomic frame id")
     scene = scene.replace(old_next_id, new_next_id, 1)
+
+#ifdef VF3_NAOMI
+// Exercise the real NetDIMM-backed model_at() and polygon parser without
+// constructing the full Model3 board. The caller supplies the board's polygon
+// RAM address range; VROM model data is fetched through the production bridge.
+bool SceneBuilder::naomi_test_vrom_model(
+    uint32_t addr, const uint32_t *polygon_ram,
+    size_t *mesh_count, size_t *vertex_count)
+{
+    if (!polygon_ram || addr < 0x100000u)
+        return false;
+    poly = polygon_ram;
+    vrom = naomi_vrom_model_scratch;
+    Viewport test_viewport;
+    vp = &test_viewport;
+    attr = Attribs();
+    cur = Mat4::identity();
+    path = 0;
+    hidden_marker[0] = hidden_marker[1] = 0;
+    draw_model(addr);
+    vp = nullptr;
+    size_t meshes = 0, vertices = 0;
+    for (const Model &model : test_viewport.models) {
+        if (!model.meshes) continue;
+        for (const Mesh &mesh : *model.meshes) {
+            ++meshes;
+            vertices += mesh.verts.size();
+        }
+    }
+    if (mesh_count) *mesh_count = meshes;
+    if (vertex_count) *vertex_count = vertices;
+    return !test_viewport.models.empty();
+}
+#endif
 
 scene_path.write_text(scene)
 
