@@ -47,6 +47,7 @@ struct Results {
     bool board_load = false;
     bool power_ppc = false;
     bool crom_bus = false;
+    bool tile_bus = false;
     bool crom = false;
     bool vrom = false;
     bool scene = false;
@@ -131,6 +132,19 @@ static Results run_integration()
         r.crom_bus = bus_executed == 7 &&
                      board.cpu.s.r[7] == 0x13579BDFu &&
                      board.cpu.s.r[11] == 0x2468ACE0u &&
+                     !board.cpu.s.fatal;
+
+        // Exercise PPC stw/lwz through the mapped Real3D tile RAM window.
+        program[0] = 0x3D80F100u; // lis r12, 0xF100
+        program[1] = 0x3DA0A55Au; // lis r13, 0xA55A
+        program[2] = 0x61ADC33Cu; // ori r13, r13, 0xC33C
+        program[3] = 0x91AC0000u; // stw r13, 0(r12)
+        program[4] = 0x81CC0000u; // lwz r14, 0(r12)
+        board.cpu.s.pc = 0;
+        board.cpu.s.npc = 0;
+        const int tile_executed = board.cpu.execute(5);
+        r.tile_bus = tile_executed == 5 &&
+                     board.cpu.s.r[14] == 0xA55AC33Cu &&
                      !board.cpu.s.fatal;
     }
 
@@ -223,7 +237,8 @@ static void draw_screen(const Results &r)
     draw_text(40, 196, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
     draw_text(40, 216, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
     draw_text(40, 236, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
-    draw_text(40, 256, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
+    draw_text(40, 256, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
+    draw_text(40, 276, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
     draw_text(40, 296, line);
