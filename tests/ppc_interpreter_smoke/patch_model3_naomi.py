@@ -573,7 +573,7 @@ if new_next_id not in scene:
         raise SystemExit("expected exactly one SceneBuilder atomic frame id")
     scene = scene.replace(old_next_id, new_next_id, 1)
 
-#ifdef VF3_NAOMI
+scene_method = """#ifdef VF3_NAOMI
 // Exercise the real NetDIMM-backed model_at() and polygon parser without
 // constructing the full Model3 board. The caller supplies the board's polygon
 // RAM address range; VROM model data is fetched through the production bridge.
@@ -607,6 +607,9 @@ bool SceneBuilder::naomi_test_vrom_model(
 }
 #endif
 
+"""
+if "bool SceneBuilder::naomi_test_vrom_model(" not in scene:
+    scene += "\n" + scene_method
 scene_header_path = path.parent.parent / "video" / "r3d_scene.h"
 scene_header = scene_header_path.read_text()
 test_decl = "\tsize_t cached() const { return rom_cache.size(); }"
