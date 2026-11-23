@@ -65,7 +65,6 @@ static Results run_integration()
     m3::Model3 board;
     std::string error;
     if (board.load("", error)) {
-        board.power_on();
         r.board = board.ram.size() == 0x800000u &&
                   board.backup.size() == 0x20000u &&
                   board.security.size() == 0x20000u &&
