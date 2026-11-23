@@ -24,6 +24,8 @@ MODEL_WORD_ADDRESS = 0x00100000
 MODEL_BYTE_OFFSET = MODEL_WORD_ADDRESS * 4
 FIXED_BUS_MARKER = 0x13579BDF
 BANKED_BUS_MARKER = 0x2468ACE0
+BANKED_BUS_MARKER_BANK = 3
+BANKED_BUS_MARKER_OFFSET = BANKED_BUS_MARKER_BANK * 0x00800000
 CHUNK = 1024 * 1024
 
 MODEL_WORDS = (
@@ -51,14 +53,18 @@ def crc_zero_region(size: int) -> int:
     return crc & 0xFFFFFFFF
 
 
-def crc_marker_region(size: int, marker: int) -> int:
-    crc = zlib.crc32(struct.pack("<I", marker))
-    remaining = size - 4
+def crc_marker_region(size: int, marker: int, marker_offset: int = 0) -> int:
+    marker_bytes = struct.pack("<I", marker)
+    crc = 0
     block = bytes(CHUNK)
-    while remaining:
-        take = min(remaining, len(block))
-        crc = zlib.crc32(block[:take], crc)
-        remaining -= take
+    for offset in range(0, size, CHUNK):
+        length = min(CHUNK, size - offset)
+        data = bytearray(length)
+        start = max(offset, marker_offset)
+        end = min(offset + length, marker_offset + len(marker_bytes))
+        if start < end:
+            data[start - offset:end - offset] = marker_bytes[start - marker_offset:end - marker_offset]
+        crc = zlib.crc32(data, crc)
     return crc & 0xFFFFFFFF
 
 
@@ -106,7 +112,7 @@ def build(executable: Path, output: Path) -> dict:
         {"id": 1, "offset": fixed_offset, "size": FIXED_SIZE,
          "crc32": crc_marker_region(FIXED_SIZE, FIXED_BUS_MARKER)},
         {"id": 2, "offset": banked_offset, "size": BANKED_SIZE,
-         "crc32": crc_marker_region(BANKED_SIZE, BANKED_BUS_MARKER)},
+         "crc32": crc_marker_region(BANKED_SIZE, BANKED_BUS_MARKER, BANKED_BUS_MARKER_OFFSET)},
         {"id": 3, "offset": vrom_offset, "size": VROM_SIZE,
          "crc32": crc_vrom_region()},
     ]
@@ -125,7 +131,7 @@ def build(executable: Path, output: Path) -> dict:
         target.truncate(image_end)
         target.seek(fixed_offset)
         target.write(struct.pack("<I", FIXED_BUS_MARKER))
-        target.seek(banked_offset)
+        target.seek(banked_offset + BANKED_BUS_MARKER_OFFSET)
         target.write(struct.pack("<I", BANKED_BUS_MARKER))
         target.seek(vrom_offset + MODEL_BYTE_OFFSET)
         target.write(MODEL_BYTES)
@@ -139,6 +145,7 @@ def build(executable: Path, output: Path) -> dict:
         "model_words": len(MODEL_WORDS),
         "fixed_bus_marker": FIXED_BUS_MARKER,
         "banked_bus_marker": BANKED_BUS_MARKER,
+        "banked_bus_marker_bank": BANKED_BUS_MARKER_BANK,
         "commercial_game_data_included": False,
         "regions": regions,
     }
