@@ -9,6 +9,12 @@ alignas(32) uint8_t verify_scratch[NAOMI_VF3_IMAGE_VERIFY_SIZE];
 
 extern "C" naomi_vf3_image_status_t naomi_model3_mount_netdimm_image(void)
 {
+    // Model3::load() and the platform bootstrap may both request the mount.
+    // Keep the resident buffers and bridge bindings alive; do not re-read and
+    // re-verify the full image on every board initialization path.
+    if (image.mounted)
+        return NAOMI_VF3_IMAGE_OK;
+
     naomi_cart_dma_result_t io = {};
     return naomi_vf3_image_mount(
         &image,
