@@ -543,7 +543,7 @@ if new_draw_end_rom not in scene:
 old_parse_ends = "\tconst uint32_t *end_lo = poly + 0x100000, *end_rom = vrom + 0x1000000;"
 new_parse_ends = """\tconst uint32_t *end_lo = poly + 0x100000;
 #ifdef VF3_NAOMI
-\tconst uint32_t *end_rom = vrom + NAOMI_VROM_MODEL_SCRATCH_WORDS;
+\tconst uint32_t *end_rom = vrom + naomi_vrom_model_words;
 #else
 \tconst uint32_t *end_rom = vrom + 0x1000000;
 #endif"""
