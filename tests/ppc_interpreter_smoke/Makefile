@@ -17,7 +17,7 @@ TARGET = vf3_ppc_interpreter_smoke.elf
 ROM = vf3_ppc_interpreter_smoke-$(BUILD_VERSION).bin
 INTEGRATION_TARGET = naomi_model3_vrom_integration.elf
 INTEGRATION_ROM = naomi_model3_vrom_integration-$(BUILD_VERSION).bin
-INTEGRATION_OBJS = integration_main.o r3d_scene.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o
+INTEGRATION_OBJS = integration_main.o model3.o r3d_scene.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o
 OBJS = main.o ppc.o
 NAOMIBINTOOL ?= $(KOS_BASE)/utils/naomibintool/naomibintool
 
@@ -42,7 +42,7 @@ integration-rom: $(INTEGRATION_ROM)
 
 model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h patch_model3_naomi.py ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/vf3_image.h ../../platform/naomi/naomi_pvr_vector.h
 	python3 patch_model3_naomi.py $(VF3_RECOMP_DIR)/src/machine/model3.cpp
-	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -ffunction-sections -fdata-sections -c $< -o $@
 
 cart_vrom_bridge.o: ../../platform/naomi/cart_vrom_bridge.cpp ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/cart_vrom.h ../../platform/naomi/cart_rom.h
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
@@ -78,7 +78,7 @@ integration_main.o: integration_main.cpp model3.o $(VF3_RECOMP_DIR)/src/video/r3
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
 
 $(INTEGRATION_TARGET): $(INTEGRATION_OBJS)
-	kos-c++ -o $@ $(INTEGRATION_OBJS) -lm
+	kos-c++ -Wl,--gc-sections -o $@ $(INTEGRATION_OBJS) -lm
 
 $(INTEGRATION_ROM): $(INTEGRATION_TARGET) $(NAOMIBINTOOL)
 	$(NAOMIBINTOOL) build $(INTEGRATION_ROM) -d "CDMN" -t "VF3 VROM Integration $(BUILD_VERSION)" -e $(INTEGRATION_TARGET)
