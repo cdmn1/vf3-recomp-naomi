@@ -3,11 +3,13 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <dc/pvr.h>
 
-/* A small vector-like owner for large Model 3 texture memory. Naomi's PVR2
- * exposes 16 MiB of SH-4-addressable VRAM; keeping the 8 MiB Model 3 texture
- * RAM there releases scarce 32 MiB main RAM for the PPC and board memories. */
+/* Model 3 texture RAM is 8 MiB. A retail-mode result from KOS can occur in
+ * Naomi emulation even though the Naomi PVR has 16 MiB. In that case KOS's
+ * allocator manages only the lower 8 MiB; reserve the upper half exclusively
+ * for this buffer. When KOS correctly identifies Naomi, use its normal pool. */
 template <typename T>
 class NaomiPvrBuffer {
 public:
@@ -18,10 +20,11 @@ public:
     NaomiPvrBuffer &operator=(const NaomiPvrBuffer &) = delete;
 
     NaomiPvrBuffer(NaomiPvrBuffer &&other) noexcept
-        : data_(other.data_), size_(other.size_)
+        : data_(other.data_), size_(other.size_), owns_pvr_(other.owns_pvr_)
     {
         other.data_ = nullptr;
         other.size_ = 0;
+        other.owns_pvr_ = false;
     }
 
     NaomiPvrBuffer &operator=(NaomiPvrBuffer &&other) noexcept
@@ -30,8 +33,10 @@ public:
             clear();
             data_ = other.data_;
             size_ = other.size_;
+            owns_pvr_ = other.owns_pvr_;
             other.data_ = nullptr;
             other.size_ = 0;
+            other.owns_pvr_ = false;
         }
         return *this;
     }
@@ -42,22 +47,36 @@ public:
             clear();
             if (!count)
                 return;
-            if (pvr_mem_available() < count * sizeof(T))
-                return;
-            data_ = static_cast<T *>(pvr_mem_malloc(count * sizeof(T)));
-            if (!data_)
-                return;
-            size_ = count;
+
+            const std::size_t bytes = count * sizeof(T);
+            if (hardware_sys_mode(nullptr) == HW_TYPE_RETAIL) {
+                constexpr std::size_t kNaomiUpperPvrHalf = 8u * 1024u * 1024u;
+                if (bytes > kNaomiUpperPvrHalf)
+                    return;
+                data_ = reinterpret_cast<T *>(
+                    static_cast<uintptr_t>(PVR_RAM_BASE) + kNaomiUpperPvrHalf);
+                size_ = count;
+                owns_pvr_ = false;
+            } else {
+                if (pvr_mem_available() < bytes)
+                    return;
+                data_ = static_cast<T *>(pvr_mem_malloc(bytes));
+                if (!data_)
+                    return;
+                size_ = count;
+                owns_pvr_ = true;
+            }
         }
         std::fill(begin(), end(), value);
     }
 
     void clear()
     {
-        if (data_)
+        if (data_ && owns_pvr_)
             pvr_mem_free(data_);
         data_ = nullptr;
         size_ = 0;
+        owns_pvr_ = false;
     }
 
     T *data() { return data_; }
@@ -74,6 +93,7 @@ public:
 private:
     T *data_ = nullptr;
     std::size_t size_ = 0;
+    bool owns_pvr_ = false;
 };
 
 #endif
