@@ -612,7 +612,7 @@ if "bool SceneBuilder::naomi_test_vrom_model(" not in scene:
     namespace_end = "} // namespace video"
     if scene.count(namespace_end) != 1:
         raise SystemExit("expected exactly one video namespace end")
-    scene = scene.replace(namespace_end, scene_method + "\\n" + namespace_end, 1)
+    scene = scene.replace(namespace_end, scene_method + "\n" + namespace_end, 1)
 
 scene_header_path = path.parent.parent / "video" / "r3d_scene.h"
 scene_header = scene_header_path.read_text()
