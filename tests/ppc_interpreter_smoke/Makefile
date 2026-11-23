@@ -74,7 +74,7 @@ r3d_scene.o: $(VF3_RECOMP_DIR)/src/video/r3d_scene.cpp $(VF3_RECOMP_DIR)/src/vid
 r3d_raster.o: $(VF3_RECOMP_DIR)/src/video/r3d_raster.cpp $(VF3_RECOMP_DIR)/src/video/r3d_raster.h $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/video/parallel.h model3.o
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
 
-integration_main.o: integration_main.cpp $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/machine/model3.h ../../platform/naomi/vf3_image.h
+integration_main.o: integration_main.cpp model3.o $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/machine/model3.h ../../platform/naomi/vf3_image.h
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
 
 $(INTEGRATION_TARGET): $(INTEGRATION_OBJS)
