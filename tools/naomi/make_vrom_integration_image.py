@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Append a synthetic VF3NROM image for Naomi NetDIMM/VROM integration tests.
 
-The image contains zero-filled CROM/VROM regions and one tiny synthetic
-triangle model. It contains no commercial game data.
+The image contains marked synthetic fixed/banked CROM words, a mostly zero-filled
+VROM region, and one tiny synthetic triangle model. It contains no commercial game data.
 """
 from __future__ import annotations
 
@@ -22,6 +22,8 @@ BANKED_SIZE = 0x04000000
 VROM_SIZE = 0x02000000
 MODEL_WORD_ADDRESS = 0x00100000
 MODEL_BYTE_OFFSET = MODEL_WORD_ADDRESS * 4
+FIXED_BUS_MARKER = 0x13579BDF
+BANKED_BUS_MARKER = 0x2468ACE0
 CHUNK = 1024 * 1024
 
 MODEL_WORDS = (
@@ -42,6 +44,17 @@ def crc_zero_region(size: int) -> int:
     block = bytes(CHUNK)
     crc = 0
     remaining = size
+    while remaining:
+        take = min(remaining, len(block))
+        crc = zlib.crc32(block[:take], crc)
+        remaining -= take
+    return crc & 0xFFFFFFFF
+
+
+def crc_marker_region(size: int, marker: int) -> int:
+    crc = zlib.crc32(struct.pack("<I", marker))
+    remaining = size - 4
+    block = bytes(CHUNK)
     while remaining:
         take = min(remaining, len(block))
         crc = zlib.crc32(block[:take], crc)
@@ -91,9 +104,9 @@ def build(executable: Path, output: Path) -> dict:
     payload_size = image_end - PAYLOAD_OFFSET
     regions = [
         {"id": 1, "offset": fixed_offset, "size": FIXED_SIZE,
-         "crc32": crc_zero_region(FIXED_SIZE)},
+         "crc32": crc_marker_region(FIXED_SIZE, FIXED_BUS_MARKER)},
         {"id": 2, "offset": banked_offset, "size": BANKED_SIZE,
-         "crc32": crc_zero_region(BANKED_SIZE)},
+         "crc32": crc_marker_region(BANKED_SIZE, BANKED_BUS_MARKER)},
         {"id": 3, "offset": vrom_offset, "size": VROM_SIZE,
          "crc32": crc_vrom_region()},
     ]
@@ -110,6 +123,10 @@ def build(executable: Path, output: Path) -> dict:
             remaining -= take
         target.write(header)
         target.truncate(image_end)
+        target.seek(fixed_offset)
+        target.write(struct.pack("<I", FIXED_BUS_MARKER))
+        target.seek(banked_offset)
+        target.write(struct.pack("<I", BANKED_BUS_MARKER))
         target.seek(vrom_offset + MODEL_BYTE_OFFSET)
         target.write(MODEL_BYTES)
 
@@ -120,6 +137,8 @@ def build(executable: Path, output: Path) -> dict:
         "payload_offset": PAYLOAD_OFFSET, "payload_size": payload_size,
         "image_size": image_end, "model_word_address": MODEL_WORD_ADDRESS,
         "model_words": len(MODEL_WORDS),
+        "fixed_bus_marker": FIXED_BUS_MARKER,
+        "banked_bus_marker": BANKED_BUS_MARKER,
         "commercial_game_data_included": False,
         "regions": regions,
     }
