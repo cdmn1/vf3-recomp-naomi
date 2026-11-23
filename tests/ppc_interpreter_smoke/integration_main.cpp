@@ -56,6 +56,8 @@ struct Results {
     size_t ram_bytes = 0, tile_bytes = 0, cull_lo_words = 0;
     size_t cull_hi_words = 0, poly_words = 0, fifo_capacity = 0;
     size_t tex_words = 0;
+    size_t pvr_before = 0, pvr_after = 0;
+    bool pvr_error = false;
 };
 
 static Results run_integration()
@@ -68,7 +70,10 @@ static Results run_integration()
 
     m3::Model3 board;
     std::string error;
+    r.pvr_before = pvr_mem_available();
     r.board_load = board.load("", error);
+    r.pvr_after = pvr_mem_available();
+    r.pvr_error = error.find("PVR VRAM") != std::string::npos;
     r.ram_bytes = board.ram.size();
     r.tile_bytes = board.tile_ram.size();
     r.cull_lo_words = board.cull_lo.size();
@@ -191,7 +196,9 @@ static void draw_screen(const Results &r)
     draw_text(40, 432, line);
     snprintf(line, sizeof(line), "FIFO:%u TEX:%u", static_cast<unsigned>(r.fifo_capacity), static_cast<unsigned>(r.tex_words));
     draw_text(40, 456, line);
-    draw_text(40, 480, "SYNTHETIC ROM DATA - NO GAME ASSETS");
+    snprintf(line, sizeof(line), "PVR:%u>%u", static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after));
+    draw_text(40, 480, line);
+    draw_text(40, 504, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
     pvr_list_finish();
     pvr_scene_finish();
 }
