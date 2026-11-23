@@ -8,6 +8,7 @@
 
 #include "vf3_image.h"
 #include "cart_vrom_bridge.h"
+#include "cart_vrom.h"
 #include "r3d_scene.h"
 #include "model3.h"
 
@@ -133,7 +134,7 @@ static void draw_screen(const Results &r)
     draw_text(40, 200, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
     draw_text(40, 248, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
     char line[64];
-    std::snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
+    snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
     draw_text(40, 312, line);
     std::snprintf(line, sizeof(line), "VROM STATUS: %d", r.vrom_status);
     draw_text(40, 344, line);
