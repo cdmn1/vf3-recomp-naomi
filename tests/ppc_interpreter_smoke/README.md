@@ -13,3 +13,21 @@ It checks that `r5 == 12`, that exactly three instructions were counted, and tha
 No game ROM, game executable or commercial asset is required.
 
 A successful Actions build proves the upstream interpreter compiles and links for the Naomi SH-4 target. A successful run in Flycast or on real hardware is a separate validation step. It does not establish that a full VF3 frame can be emulated in real time.
+
+
+## NetDIMM VROM and SceneBuilder integration ROM
+
+The separate `naomi-model3-vrom-integration` artifact is a bootable Naomi test
+image with a synthetic VF3NROM payload at the normal 16 MiB offset. It contains
+zero-filled fixed CROM, banked CROM and VROM regions plus one synthetic
+three-vertex polygon model; it contains no commercial game data.
+
+At startup the ROM mounts the image through the cartridge G1 DMA reader,
+checks the full-region CRCs, reads a banked-CROM page, streams VROM words, and
+passes the model through the patched upstream `SceneBuilder::model_at()` and
+polygon parser. It repeats the model request to check the parsed-ROM cache.
+Results are shown on screen; no serial connection is used.
+
+This is a focused integration test of the NetDIMM image reader, CROM/VROM
+bridges and SceneBuilder model parsing. It does not boot the complete Model 3
+board, execute VF3, or validate the Naomi PowerVR2 game renderer.
