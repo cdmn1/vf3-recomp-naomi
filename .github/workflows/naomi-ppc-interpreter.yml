@@ -280,6 +280,19 @@ jobs:
             "build-artifacts/$INTEGRATION_ROM"
           test -s "build-artifacts/$INTEGRATION_ROM"
           test -s "build-artifacts/$INTEGRATION_ROM.json"
+          INTEGRATION_SIZE="$(stat -c '%s' "build-artifacts/$INTEGRATION_ROM")"
+          INTEGRATION_SHA="$(sha256sum "build-artifacts/$INTEGRATION_ROM" | awk '{print $1}')"
+          cat > "build-artifacts/$INTEGRATION_ROM.INFO.txt" <<EOF
+          Target: Naomi NetDIMM VROM and SceneBuilder integration probe
+          Project commit: ${GITHUB_SHA}
+          GitHub Actions run: ${GITHUB_RUN_ID}
+          Build version: v${GITHUB_RUN_NUMBER}
+          ROM: ${INTEGRATION_ROM}
+          Size: ${INTEGRATION_SIZE}
+          SHA-256: ${INTEGRATION_SHA}
+          Payload offset: 0x01000000
+          Commercial game data: not included
+          EOF
 
       - name: Package SH-4 FPU probe independently
         if: always()
