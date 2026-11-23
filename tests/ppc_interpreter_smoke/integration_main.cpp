@@ -3,7 +3,7 @@
 #include <dc/pvr.h>
 
 #include <cstdint>
-#include <cstdio>
+#include <stdio.h>
 #include <cstring>
 
 #include "vf3_image.h"
@@ -136,9 +136,9 @@ static void draw_screen(const Results &r)
     char line[64];
     snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
     draw_text(40, 312, line);
-    std::snprintf(line, sizeof(line), "VROM STATUS: %d", r.vrom_status);
+    snprintf(line, sizeof(line), "VROM STATUS: %d", r.vrom_status);
     draw_text(40, 344, line);
-    std::snprintf(line, sizeof(line), "MESHES: %u VERTICES: %u CACHE: %u",
+    snprintf(line, sizeof(line), "MESHES: %u VERTICES: %u CACHE: %u",
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices),
         static_cast<unsigned>(r.cached));
     draw_text(40, 376, line);
