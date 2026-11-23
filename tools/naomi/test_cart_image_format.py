@@ -95,7 +95,11 @@ class CartImageFormatTests(unittest.TestCase):
             pvr_header = include_dir / "dc" / "pvr.h"
             pvr_header.parent.mkdir(parents=True)
             pvr_header.write_text(
-                "#pragma once\n#include <stddef.h>\ntypedef void *pvr_ptr_t;\n"
+                "#pragma once\n#include <stddef.h>\n#include <stdint.h>\ntypedef void *pvr_ptr_t;\n"
+                "extern unsigned char test_pvr_ram[];\n"
+                "#define PVR_RAM_BASE ((uintptr_t)test_pvr_ram)\n"
+                "#define HW_TYPE_RETAIL 0\n"
+                "int hardware_sys_mode(void *);\n"
                 "#ifdef __cplusplus\nextern \"C\" {\n#endif\n"
                 "size_t pvr_mem_available(void);\n"
                 "pvr_ptr_t pvr_mem_malloc(size_t);\n"
