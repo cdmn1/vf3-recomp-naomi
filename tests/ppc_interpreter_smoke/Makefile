@@ -17,7 +17,7 @@ TARGET = vf3_ppc_interpreter_smoke.elf
 ROM = vf3_ppc_interpreter_smoke-$(BUILD_VERSION).bin
 INTEGRATION_TARGET = naomi_model3_vrom_integration.elf
 INTEGRATION_ROM = naomi_model3_vrom_integration-$(BUILD_VERSION).bin
-INTEGRATION_OBJS = integration_main.o model3.o r3d_scene.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o
+INTEGRATION_OBJS = integration_main.o model3.o r3d_scene.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o cart_vrom.o
 OBJS = main.o ppc.o
 NAOMIBINTOOL ?= $(KOS_BASE)/utils/naomibintool/naomibintool
 
