@@ -24,7 +24,7 @@ class SyntheticImageTests(unittest.TestCase):
             with output.open("rb") as stream:
                 stream.seek(IMAGE.PAYLOAD_OFFSET)
                 header = bytearray(stream.read(IMAGE.HEADER_SIZE))
-                self.assertEqual(header[:8], b"VF3NROM\\0")
+                self.assertEqual(header[:8], b"VF3NROM\0")
                 stored_crc = struct.unpack_from("<I", header, 28)[0]
                 struct.pack_into("<I", header, 28, 0)
                 self.assertEqual(stored_crc, zlib.crc32(header) & 0xFFFFFFFF)
