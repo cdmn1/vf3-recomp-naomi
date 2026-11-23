@@ -39,14 +39,15 @@ class SyntheticImageTests(unittest.TestCase):
                 ])
                 self.assertEqual([d[3] for d in descriptors], [
                     IMAGE.crc_marker_region(IMAGE.FIXED_SIZE, IMAGE.FIXED_BUS_MARKER),
-                    IMAGE.crc_marker_region(IMAGE.BANKED_SIZE, IMAGE.BANKED_BUS_MARKER),
+                    IMAGE.crc_marker_region(IMAGE.BANKED_SIZE, IMAGE.BANKED_BUS_MARKER,
+                                              IMAGE.BANKED_BUS_MARKER_OFFSET),
                     IMAGE.crc_vrom_region(),
                 ])
 
                 fixed_offset, banked_offset = descriptors[0][1], descriptors[1][1]
                 stream.seek(fixed_offset)
                 self.assertEqual(stream.read(4), struct.pack("<I", IMAGE.FIXED_BUS_MARKER))
-                stream.seek(banked_offset)
+                stream.seek(banked_offset + IMAGE.BANKED_BUS_MARKER_OFFSET)
                 self.assertEqual(stream.read(4), struct.pack("<I", IMAGE.BANKED_BUS_MARKER))
 
                 vrom_offset = descriptors[2][1]
