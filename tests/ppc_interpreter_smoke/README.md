@@ -22,12 +22,15 @@ image with a synthetic VF3NROM payload at the normal 16 MiB offset. It contains
 zero-filled fixed CROM, banked CROM and VROM regions plus one synthetic
 three-vertex polygon model; it contains no commercial game data.
 
-At startup the ROM mounts the image through the cartridge G1 DMA reader,
-checks the full-region CRCs, reads a banked-CROM page, streams VROM words, and
-passes the model through the patched upstream `SceneBuilder::model_at()` and
+At startup the ROM mounts the image through the cartridge G1 DMA reader and
+checks all three region CRCs. It then calls the real patched `Model3::load()`
+path, which initializes the board's RAM, culling RAM, polygon RAM, texture
+FIFO, page tracking and PVR-VRAM-backed 8 MiB texture RAM. It checks the
+resident fixed CROM and banked-CROM cache, streams VROM words, and passes the
+synthetic model through the patched upstream `SceneBuilder::model_at()` and
 polygon parser. It repeats the model request to check the parsed-ROM cache.
 Results are shown on screen; no serial connection is used.
 
-This is a focused integration test of the NetDIMM image reader, CROM/VROM
-bridges and SceneBuilder model parsing. It does not boot the complete Model 3
-board, execute VF3, or validate the Naomi PowerVR2 game renderer.
+This validates board storage initialization and the NetDIMM/SceneBuilder
+integration, but it does not call the board's power-on sequence, execute the
+VF3 PowerPC program, or validate the Naomi PowerVR2 game renderer.
