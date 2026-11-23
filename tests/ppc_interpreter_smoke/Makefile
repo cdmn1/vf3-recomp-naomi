@@ -17,7 +17,7 @@ TARGET = vf3_ppc_interpreter_smoke.elf
 ROM = vf3_ppc_interpreter_smoke-$(BUILD_VERSION).bin
 INTEGRATION_TARGET = naomi_model3_vrom_integration.elf
 INTEGRATION_ROM = naomi_model3_vrom_integration-$(BUILD_VERSION).bin
-INTEGRATION_OBJS = integration_main.o model3.o r3d_scene.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o
+INTEGRATION_OBJS = integration_main.o model3.o r3d_scene.o ppc.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o
 OBJS = main.o ppc.o
 NAOMIBINTOOL ?= $(KOS_BASE)/utils/naomibintool/naomibintool
 
@@ -35,7 +35,7 @@ rom: $(ROM)
 # Raster geometry preparation runs without CPU colour/depth/stencil buffers.
 model3-compile: model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o r3d_scene.o r3d_raster.o
 
-# Link the real Naomi cartridge/image bridge and the patched upstream SceneBuilder.
+# Link the real Naomi cartridge/image bridge, PPC interpreter, and patched upstream SceneBuilder.
 # The probe uses a synthetic NetDIMM image, not commercial VF3 ROM data.
 model3-integration: $(INTEGRATION_TARGET)
 integration-rom: $(INTEGRATION_ROM)
@@ -77,11 +77,11 @@ r3d_raster.o: $(VF3_RECOMP_DIR)/src/video/r3d_raster.cpp $(VF3_RECOMP_DIR)/src/v
 integration_main.o: integration_main.cpp model3.o $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/machine/model3.h ../../platform/naomi/vf3_image.h
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
 
-$(INTEGRATION_TARGET): $(INTEGRATION_OBJS)
-	kos-c++ -Wl,--gc-sections -o $@ $(INTEGRATION_OBJS) -lm
+$(INTEGRATION_TARGET): $(INTEGRATION_OBJS) $(SOFTFLOAT_BUILD)/softfloat.a
+	kos-c++ -Wl,--gc-sections -o $@ $(INTEGRATION_OBJS) $(SOFTFLOAT_BUILD)/softfloat.a -lm
 
 $(INTEGRATION_ROM): $(INTEGRATION_TARGET) $(NAOMIBINTOOL)
-	$(NAOMIBINTOOL) build $(INTEGRATION_ROM) -d "CDMN" -t "VF3 VROM Integration $(BUILD_VERSION)" -e $(INTEGRATION_TARGET)
+	$(NAOMIBINTOOL) build $(INTEGRATION_ROM) -d "CDMN" -t "VF3 Model3 Integration $(BUILD_VERSION)" -e $(INTEGRATION_TARGET)
 
 ppc.o: $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp $(VF3_RECOMP_DIR)/src/ppc/ppc.h patch_ppc_softfloat.py
 	python3 patch_ppc_softfloat.py $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp
