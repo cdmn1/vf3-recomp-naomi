@@ -15,6 +15,9 @@ SOFTFLOAT_BUILD = $(SOFTFLOAT_DIR)/build/Linux-x86_64-GCC
 
 TARGET = vf3_ppc_interpreter_smoke.elf
 ROM = vf3_ppc_interpreter_smoke-$(BUILD_VERSION).bin
+INTEGRATION_TARGET = naomi_model3_vrom_integration.elf
+INTEGRATION_ROM = naomi_model3_vrom_integration-$(BUILD_VERSION).bin
+INTEGRATION_OBJS = integration_main.o r3d_scene.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o
 OBJS = main.o ppc.o
 NAOMIBINTOOL ?= $(KOS_BASE)/utils/naomibintool/naomibintool
 
@@ -31,6 +34,11 @@ rom: $(ROM)
 # Compile the Naomi board core, complete NetDIMM ROM path, and scene preparation.
 # Raster geometry preparation runs without CPU colour/depth/stencil buffers.
 model3-compile: model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o r3d_scene.o r3d_raster.o
+
+# Link the real Naomi cartridge/image bridge and the patched upstream SceneBuilder.
+# The probe uses a synthetic NetDIMM image, not commercial VF3 ROM data.
+model3-integration: $(INTEGRATION_TARGET)
+integration-rom: $(INTEGRATION_ROM)
 
 model3.o: $(VF3_RECOMP_DIR)/src/machine/model3.cpp $(VF3_RECOMP_DIR)/src/machine/model3.h patch_model3_naomi.py ../../platform/naomi/cart_vrom_bridge.h ../../platform/naomi/vf3_image.h ../../platform/naomi/naomi_pvr_vector.h
 	python3 patch_model3_naomi.py $(VF3_RECOMP_DIR)/src/machine/model3.cpp
@@ -66,6 +74,15 @@ r3d_scene.o: $(VF3_RECOMP_DIR)/src/video/r3d_scene.cpp $(VF3_RECOMP_DIR)/src/vid
 r3d_raster.o: $(VF3_RECOMP_DIR)/src/video/r3d_raster.cpp $(VF3_RECOMP_DIR)/src/video/r3d_raster.h $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/video/parallel.h model3.o
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
 
+integration_main.o: integration_main.cpp $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/machine/model3.h ../../platform/naomi/vf3_image.h
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
+
+$(INTEGRATION_TARGET): $(INTEGRATION_OBJS)
+	kos-c++ -o $@ $(INTEGRATION_OBJS) -lm
+
+$(INTEGRATION_ROM): $(INTEGRATION_TARGET) $(NAOMIBINTOOL)
+	$(NAOMIBINTOOL) build $(INTEGRATION_ROM) -d "CDMN" -t "VF3 VROM Integration $(BUILD_VERSION)" -e $(INTEGRATION_TARGET)
+
 ppc.o: $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp $(VF3_RECOMP_DIR)/src/ppc/ppc.h patch_ppc_softfloat.py
 	python3 patch_ppc_softfloat.py $(VF3_RECOMP_DIR)/src/ppc/ppc.cpp
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
@@ -82,6 +99,6 @@ $(ROM): $(TARGET) $(NAOMIBINTOOL)
 include $(KOS_BASE)/Makefile.rules
 
 clean:
-	-rm -f $(TARGET) $(ROM) $(OBJS) model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o r3d_scene.o r3d_raster.o
+	-rm -f $(TARGET) $(ROM) $(OBJS) $(INTEGRATION_TARGET) $(INTEGRATION_ROM) integration_main.o model3.o cart_vrom_bridge.o vf3_image.o vf3_image_runtime.o cart_dma.o cart_image_format.o cart_image.o cart_rom.o cart_vrom.o r3d_scene.o r3d_raster.o
 
-.PHONY: all rom model3-compile clean
+.PHONY: all rom model3-compile model3-integration integration-rom clean
