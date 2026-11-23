@@ -66,7 +66,7 @@ def crc_vrom_region() -> int:
 
 def make_header(payload_size: int, regions: list[dict]) -> bytes:
     header = bytearray(HEADER_SIZE)
-    struct.pack_into("<8sIIIIII", header, 0, b"VF3NROM\\0", 1,
+    struct.pack_into("<8sIIIIII", header, 0, b"VF3NROM\0", 1,
                      HEADER_SIZE, 1, len(regions), payload_size, 0)
     at = 32
     for region in regions:
@@ -103,7 +103,7 @@ def build(executable: Path, output: Path) -> dict:
     with executable.open("rb") as source, output.open("wb") as target:
         shutil.copyfileobj(source, target, CHUNK)
         remaining = PAYLOAD_OFFSET - executable_size
-        pad = b"\\xFF" * CHUNK
+        pad = b"\xFF" * CHUNK
         while remaining:
             take = min(remaining, len(pad))
             target.write(pad[:take])
@@ -124,7 +124,7 @@ def build(executable: Path, output: Path) -> dict:
         "regions": regions,
     }
     output.with_suffix(output.suffix + ".json").write_text(
-        json.dumps(manifest, indent=2) + "\\n", encoding="utf-8")
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
 
 
