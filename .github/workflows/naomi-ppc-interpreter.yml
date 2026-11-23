@@ -196,6 +196,18 @@ jobs:
           make -C tests/ppc_interpreter_smoke model3-compile
           test -s tests/ppc_interpreter_smoke/model3.o
 
+      - name: Link Naomi NetDIMM VROM and SceneBuilder integration ROM
+        env:
+          KOS_BASE: ${{ github.workspace }}/kos
+          VF3_RECOMP_DIR: ${{ github.workspace }}/vf3-recomp
+        run: |
+          set -eo pipefail
+          export KOS_SUBARCH=naomi
+          . "$KOS_BASE/environ.sh"
+          export KOS_INC_PATHS_CPP=""
+          make -C tests/ppc_interpreter_smoke model3-integration
+          test -s tests/ppc_interpreter_smoke/naomi_model3_vrom_integration.elf
+
       - name: Compile Naomi cartridge PIO read probe
         env:
           KOS_BASE: ${{ github.workspace }}/kos
@@ -261,6 +273,13 @@ jobs:
           PY
           test "$(stat -c '%s' "tests/naomi_cart_probe/$CART_ROM")" -eq 67108864
           cp "tests/naomi_cart_probe/$CART_ROM" build-artifacts/
+          INTEGRATION_ROM="naomi_model3_vrom_integration-v${GITHUB_RUN_NUMBER}.bin"
+          BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/ppc_interpreter_smoke integration-rom
+          python3 tools/naomi/make_vrom_integration_image.py \
+            "tests/ppc_interpreter_smoke/$INTEGRATION_ROM" \
+            "build-artifacts/$INTEGRATION_ROM"
+          test -s "build-artifacts/$INTEGRATION_ROM"
+          test -s "build-artifacts/$INTEGRATION_ROM.json"
 
       - name: Package SH-4 FPU probe independently
         if: always()
@@ -338,4 +357,11 @@ jobs:
         with:
           name: vf3-recomp-naomi-ppc-smoke-v${{ github.run_number }}
           path: build-artifacts/*
+          if-no-files-found: error
+
+      - name: Upload Naomi Model 3 VROM integration ROM
+        uses: actions/upload-artifact@v4
+        with:
+          name: naomi-model3-vrom-integration-v${{ github.run_number }}
+          path: build-artifacts/naomi_model3_vrom_integration-v${{ github.run_number }}.bin*
           if-no-files-found: error
