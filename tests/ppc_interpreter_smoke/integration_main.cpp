@@ -13,12 +13,8 @@
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
-// The SceneBuilder translation unit needs this one board accessor. This probe
-// deliberately tests the production SceneBuilder parser without linking or
-// starting the full Model3 emulation loop.
-namespace m3 {
-uint32_t Model3::peek32(uint32_t) const { return 0; }
-}
+// The board core object is linked; this probe invokes its storage bridge and
+// the production SceneBuilder parser without starting the full Model3 loop.
 
 alignas(32) static uint32_t polygon_ram[0x100000];
 
