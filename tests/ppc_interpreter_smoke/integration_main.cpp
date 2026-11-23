@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <stdio.h>
 #include <cstring>
+#include <string>
 
 #include "vf3_image.h"
 #include "cart_vrom_bridge.h"
@@ -14,10 +15,8 @@
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
-// The board core object is linked; this probe invokes its storage bridge and
-// the production SceneBuilder parser without starting the full Model3 loop.
-
-alignas(32) static uint32_t polygon_ram[0x100000];
+// This probe mounts the synthetic NetDIMM image, initializes the real Model3
+// board storage, and invokes the production SceneBuilder parser/cache.
 
 static const uint32_t expected_model[19] = {
     0x00000000u, 0x00000006u, 0x00000000u, 0x00000000u,
@@ -29,6 +28,7 @@ static const uint32_t expected_model[19] = {
 
 struct Results {
     bool mount = false;
+    bool board = false;
     bool crom = false;
     bool vrom = false;
     bool scene = false;
@@ -47,6 +47,21 @@ static Results run_integration()
     if (!r.mount)
         return r;
 
+    m3::Model3 board;
+    std::string error;
+    if (board.load("", error)) {
+        board.power_on();
+        r.board = board.ram.size() == 0x800000u &&
+                  board.backup.size() == 0x20000u &&
+                  board.security.size() == 0x20000u &&
+                  board.tile_ram.size() == 0x120000u &&
+                  board.cull_lo.size() == 0x400000u / 4u + m3::Model3::CULL_PAD &&
+                  board.cull_hi.size() == 0x100000u / 4u + m3::Model3::CULL_PAD &&
+                  board.poly_ram.size() == 0x400000u / 4u &&
+                  board.tex_fifo.capacity() >= 0x100000u / 4u &&
+                  board.tex_ram.size() == 2048u * 2048u;
+    }
+
     const uint8_t *fixed = naomi_model3_crom_fixed();
     const int bank_selected = naomi_model3_crom_select_bank(0xFCu); // bank 3
     const uint32_t bank_word = naomi_model3_crom_read32(0);
@@ -59,14 +74,14 @@ static Results run_integration()
     r.vrom = r.vrom_status == NAOMI_CART_VROM_OK &&
              std::memcmp(actual_model, expected_model, sizeof(expected_model)) == 0;
 
-    if (r.vrom) {
+    if (r.vrom && board.poly_ram.size() == 0x400000u / 4u) {
         video::SceneBuilder builder;
         const bool first = builder.naomi_test_vrom_model(
-            0x00100000u, polygon_ram, &r.meshes, &r.vertices);
+            0x00100000u, board.poly_ram.data(), &r.meshes, &r.vertices);
         const size_t cache_after_first = builder.cached();
         size_t second_meshes = 0, second_vertices = 0;
         const bool second = builder.naomi_test_vrom_model(
-            0x00100000u, polygon_ram, &second_meshes, &second_vertices);
+            0x00100000u, board.poly_ram.data(), &second_meshes, &second_vertices);
         r.cached = builder.cached();
         r.scene = first && second && r.meshes == 1 && r.vertices == 3 &&
                   second_meshes == r.meshes && second_vertices == r.vertices &&
@@ -128,20 +143,21 @@ static void draw_screen(const Results &r)
     pvr_wait_ready();
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_TR_POLY);
-    draw_text(40, 48, "VF3 NAOMI - VROM INTEGRATION");
-    draw_text(40, 104, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
-    draw_text(40, 152, r.crom ? "FIXED/BANKED CROM: PASS" : "FIXED/BANKED CROM: FAIL");
-    draw_text(40, 200, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
-    draw_text(40, 248, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
+    draw_text(40, 48, "VF3 NAOMI - MODEL3 INTEGRATION");
+    draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
+    draw_text(40, 136, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
+    draw_text(40, 176, r.crom ? "FIXED/BANKED CROM: PASS" : "FIXED/BANKED CROM: FAIL");
+    draw_text(40, 216, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
+    draw_text(40, 256, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
-    draw_text(40, 312, line);
+    draw_text(40, 320, line);
     snprintf(line, sizeof(line), "VROM STATUS: %d", r.vrom_status);
-    draw_text(40, 344, line);
+    draw_text(40, 352, line);
     snprintf(line, sizeof(line), "MESHES: %u VERTICES: %u CACHE: %u",
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices),
         static_cast<unsigned>(r.cached));
-    draw_text(40, 376, line);
+    draw_text(40, 384, line);
     draw_text(40, 448, "SYNTHETIC ROM DATA - NO GAME ASSETS");
     pvr_list_finish();
     pvr_scene_finish();
@@ -149,9 +165,9 @@ static void draw_screen(const Results &r)
 
 int main()
 {
-    const Results results = run_integration();
     pvr_init_defaults();
     pvr_set_bg_color(0.02f, 0.06f, 0.12f);
+    const Results results = run_integration();
     font_texture = pvr_mem_malloc(256 * 256 * 2);
     if (!font_texture) {
         printf("PVR font texture allocation failed\n");
