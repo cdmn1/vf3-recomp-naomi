@@ -57,6 +57,7 @@ struct Results {
     size_t cull_hi_words = 0, poly_words = 0, fifo_capacity = 0;
     size_t tex_words = 0;
     size_t pvr_before = 0, pvr_after = 0;
+    unsigned hw_mode = 0, pvr_total = 0;
     bool pvr_error = false;
 };
 
@@ -70,6 +71,8 @@ static Results run_integration()
 
     m3::Model3 board;
     std::string error;
+    r.hw_mode = static_cast<unsigned>(hardware_sys_mode(nullptr));
+    r.pvr_total = static_cast<unsigned>(PVR_RAM_SIZE);
     r.pvr_before = pvr_mem_available();
     r.board_load = board.load("", error);
     r.pvr_after = pvr_mem_available();
@@ -183,22 +186,22 @@ static void draw_screen(const Results &r)
     draw_text(40, 256, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
-    draw_text(40, 320, line);
+    draw_text(40, 296, line);
     snprintf(line, sizeof(line), "VROM STATUS: %d", r.vrom_status);
-    draw_text(40, 352, line);
+    draw_text(40, 320, line);
     snprintf(line, sizeof(line), "MESHES: %u VERTICES: %u CACHE: %u",
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices),
         static_cast<unsigned>(r.cached));
-    draw_text(40, 384, line);
+    draw_text(40, 344, line);
     snprintf(line, sizeof(line), "RAM:%u TILE:%u", static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes));
-    draw_text(40, 408, line);
+    draw_text(40, 368, line);
     snprintf(line, sizeof(line), "CULL:%u/%u POLY:%u", static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words), static_cast<unsigned>(r.poly_words));
-    draw_text(40, 432, line);
+    draw_text(40, 392, line);
     snprintf(line, sizeof(line), "FIFO:%u TEX:%u", static_cast<unsigned>(r.fifo_capacity), static_cast<unsigned>(r.tex_words));
-    draw_text(40, 456, line);
-    snprintf(line, sizeof(line), "PVR:%u>%u", static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after));
-    draw_text(40, 480, line);
-    draw_text(40, 504, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
+    draw_text(40, 416, line);
+    snprintf(line, sizeof(line), "PVR:%u>%u HW:%u VRAM:%u", static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after), r.hw_mode, r.pvr_total / (1024u * 1024u));
+    draw_text(40, 440, line);
+    draw_text(40, 464, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
     pvr_list_finish();
     pvr_scene_finish();
 }
