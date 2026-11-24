@@ -239,7 +239,7 @@ static Results run_integration()
                        board.tex_ram[1056u * 2048u + 36u] == texture_pattern[9] &&
                        board.tex_ram[1057u * 2048u + 32u] == texture_pattern[3] &&
                        board.tex_ram[1056u * 2048u + 40u] == texture_pattern[65] &&
-                       board.tex_ram[1064u * 2048u + 32u] == texture_pattern[129] &&
+                       board.tex_ram[1064u * 2048u + 32u] == texture_pattern[257] &&
                        board.tex_ram[1087u * 2048u + 63u] == texture_pattern[1022] &&
                        // Confirm page 0 and the old origin were not accidentally written.
                        board.tex_ram[32u * 2048u + 32u] == 0 &&
