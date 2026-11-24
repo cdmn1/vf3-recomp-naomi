@@ -70,6 +70,8 @@ struct Results {
     bool vrom_edges = false;
     bool vrom_port = false;
     bool scene = false;
+    bool scene_geometry = false;
+    bool scene_colour = false;
     int mount_status = 0;
     int vrom_status = 0;
     size_t meshes = 0;
@@ -437,7 +439,8 @@ static Results run_integration()
     if (r.vrom && board.poly_ram.size() == 0x400000u / 4u) {
         video::SceneBuilder builder;
         const bool first = builder.naomi_test_vrom_model(
-            0x00100000u, board.poly_ram.data(), &r.meshes, &r.vertices);
+            0x00100000u, board.poly_ram.data(), &r.meshes, &r.vertices,
+            &r.scene_geometry, &r.scene_colour);
         const size_t cache_after_first = builder.cached();
         size_t second_meshes = 0, second_vertices = 0;
         const bool second = builder.naomi_test_vrom_model(
@@ -445,7 +448,8 @@ static Results run_integration()
         r.cached = builder.cached();
         r.scene = first && second && r.meshes == 2 && r.vertices == 6 &&
                   second_meshes == r.meshes && second_vertices == r.vertices &&
-                  cache_after_first == 1 && r.cached == 1;
+                  cache_after_first == 1 && r.cached == 1 &&
+                  r.scene_geometry && r.scene_colour;
     }
     return r;
 }
@@ -516,7 +520,7 @@ static void draw_screen(const Results &r)
     draw_text(40, 244, r.vrom_port ? "VROM TEXTURE PORT: PASS" : "VROM TEXTURE PORT: FAIL");
     draw_text(40, 262, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
     draw_text(40, 280, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
-    draw_text(40, 298, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
+    draw_text(40, 298, r.scene ? "SCENEBUILDER PARSE/GEOMETRY/CACHE: PASS" : "SCENEBUILDER PARSE/GEOMETRY/CACHE: FAIL");
     draw_text(40, 316, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
     draw_text(40, 334, r.texture16 ? "REAL3D TEXTURE 16-BIT: PASS" : "REAL3D TEXTURE 16-BIT: FAIL");
     draw_text(40, 352, r.texture8_low ? "REAL3D TEXTURE 8-BIT LOW: PASS" : "REAL3D TEXTURE 8-BIT LOW: FAIL");

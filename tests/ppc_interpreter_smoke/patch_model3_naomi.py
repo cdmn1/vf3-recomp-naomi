@@ -579,7 +579,8 @@ scene_method = """#ifdef VF3_NAOMI
 // RAM address range; VROM model data is fetched through the production bridge.
 bool SceneBuilder::naomi_test_vrom_model(
     uint32_t addr, const uint32_t *polygon_ram,
-    size_t *mesh_count, size_t *vertex_count)
+    size_t *mesh_count, size_t *vertex_count,
+    bool *geometry_valid, bool *colour_valid)
 {
     if (!polygon_ram || addr < 0x100000u)
         return false;
@@ -594,15 +595,43 @@ bool SceneBuilder::naomi_test_vrom_model(
     draw_model(addr);
     vp = nullptr;
     size_t meshes = 0, vertices = 0;
+    std::vector<const Mesh *> parsed_meshes;
     for (const Model &model : test_viewport.models) {
         if (!model.meshes) continue;
         for (const Mesh &mesh : *model.meshes) {
             ++meshes;
             vertices += mesh.verts.size();
+            parsed_meshes.push_back(&mesh);
         }
+    }
+    auto close = [](float a, float b) { return std::fabs(a - b) < 0.0001f; };
+    bool geometry = parsed_meshes.size() == 2 &&
+        parsed_meshes[0]->verts.size() == 3 &&
+        parsed_meshes[1]->verts.size() == 3;
+    if (geometry) {
+        const Vertex *a = parsed_meshes[0]->verts.data();
+        const Vertex *b = parsed_meshes[1]->verts.data();
+        geometry =
+            close(a[0].pos[0], 0.0f) && close(a[0].pos[1], 0.0f) &&
+            close(a[1].pos[0], 2.0f) && close(a[1].pos[1], 0.0f) &&
+            close(a[2].pos[0], 0.0f) && close(a[2].pos[1], 2.0f) &&
+            close(b[0].pos[0], 1.0f) && close(b[0].pos[1], 0.0f) &&
+            close(b[1].pos[0], 3.0f) && close(b[1].pos[1], 0.0f) &&
+            close(b[2].pos[0], 1.0f) && close(b[2].pos[1], 2.0f);
+    }
+    bool colour = parsed_meshes.size() == 2 &&
+        parsed_meshes[0]->verts.size() == 3 &&
+        parsed_meshes[1]->verts.size() == 3;
+    if (colour) {
+        const uint8_t *a = parsed_meshes[0]->verts[0].colour;
+        const uint8_t *b = parsed_meshes[1]->verts[0].colour;
+        colour = a[0] == 255 && a[1] == 255 && a[2] == 255 && a[3] == 255 &&
+                 b[0] == 255 && b[1] == 0 && b[2] == 0 && b[3] == 255;
     }
     if (mesh_count) *mesh_count = meshes;
     if (vertex_count) *vertex_count = vertices;
+    if (geometry_valid) *geometry_valid = geometry;
+    if (colour_valid) *colour_valid = colour;
     return !test_viewport.models.empty();
 }
 #endif
@@ -620,7 +649,7 @@ test_decl = "\tsize_t cached() const { return rom_cache.size(); }"
 test_decl_naomi = test_decl + """
 #ifdef VF3_NAOMI
 \tbool naomi_test_vrom_model(uint32_t addr, const uint32_t *polygon_ram,
-\t                           size_t *mesh_count, size_t *vertex_count);
+\t                           size_t *mesh_count, size_t *vertex_count,\n\t                           bool *geometry_valid, bool *colour_valid);
 #endif"""
 if test_decl_naomi not in scene_header:
     if scene_header.count(test_decl) != 1:
