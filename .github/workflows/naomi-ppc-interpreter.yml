@@ -16,6 +16,12 @@ on:
       - "VERSION"
       - ".github/workflows/naomi-ppc-interpreter.yml"
   workflow_dispatch:
+    inputs:
+      pack_real_vf3:
+        description: "Download VF3 ROM ZIP from the VF3_ROM_ZIP_URL repository secret, validate all 39 ROMs, and package a real-game NetDIMM image"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -302,6 +308,39 @@ jobs:
           Commercial game data: not included
           EOF
 
+      - name: Download, verify and package user-supplied VF3 Revision D ROMs
+        if: github.event_name == 'workflow_dispatch' && inputs.pack_real_vf3
+        env:
+          VF3_ROM_ZIP_URL: ${{ secrets.VF3_ROM_ZIP_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VF3_ROM_ZIP_URL:-}" ]; then
+            echo "::error::Repository secret VF3_ROM_ZIP_URL is not configured."
+            exit 1
+          fi
+          curl --fail --location --silent --show-error --retry 3 \
+            "$VF3_ROM_ZIP_URL" --output "$RUNNER_TEMP/vf3-roms.zip"
+          unzip -t "$RUNNER_TEMP/vf3-roms.zip" >/dev/null
+          ROM="naomi_model3_vrom_integration-v${GITHUB_RUN_NUMBER}.bin"
+          OUTPUT="vf3_naomi_rev_d-v${GITHUB_RUN_NUMBER}.bin"
+          python3 tools/naomi/pack_vf3_roms.py \
+            "build-artifacts/$ROM" "$RUNNER_TEMP/vf3-roms.zip" \
+            "build-artifacts/$OUTPUT"
+          SIZE="$(stat -c '%s' "build-artifacts/$OUTPUT")"
+          SHA="$(sha256sum "build-artifacts/$OUTPUT" | awk '{print $1}')"
+          cat > "build-artifacts/$OUTPUT.INFO.txt" <<EOF
+          Target: VF3 Revision D real-game NetDIMM image
+          Project commit: ${GITHUB_SHA}
+          GitHub Actions run: ${GITHUB_RUN_ID}
+          Build version: v${GITHUB_RUN_NUMBER}
+          ROM: ${OUTPUT}
+          Size: ${SIZE}
+          SHA-256: ${SHA}
+          Source ROM ZIP: user-supplied Dropbox file (not included in artifact)
+          ROM validation: 39 expected ROMs, CRC32 and exact size checked by packer
+          Commercial game data: not included in repository
+          EOF
+
       - name: Package SH-4 FPU probe independently
         if: always()
         env:
@@ -385,4 +424,12 @@ jobs:
         with:
           name: naomi-model3-vrom-integration-v${{ github.run_number }}
           path: build-artifacts/naomi_model3_vrom_integration-v${{ github.run_number }}.bin*
+          if-no-files-found: error
+
+      - name: Upload real VF3 Revision D NetDIMM image
+        if: github.event_name == 'workflow_dispatch' && inputs.pack_real_vf3
+        uses: actions/upload-artifact@v4
+        with:
+          name: vf3-naomi-rev-d-v${{ github.run_number }}
+          path: build-artifacts/vf3_naomi_rev_d-v${{ github.run_number }}.bin*
           if-no-files-found: error
