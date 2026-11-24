@@ -501,36 +501,36 @@ static void draw_screen(const Results &r)
     draw_text(40, 72, "SYNTHETIC ROM DATA - NO GAME ASSETS");
     draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
     draw_text(40, 136, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
-    draw_text(40, 156, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
-    draw_text(40, 176, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
-    draw_text(40, 196, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
-    draw_text(40, 216, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
-    draw_text(40, 236, r.vrom_edges ? "VROM PAGE/MIRROR/WRAP: PASS" : "VROM PAGE/MIRROR/WRAP: FAIL");
-    draw_text(40, 256, r.vrom_port ? "VROM TEXTURE PORT: PASS" : "VROM TEXTURE PORT: FAIL");
-    draw_text(40, 276, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
-    draw_text(40, 296, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
-    draw_text(40, 316, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
-    draw_text(40, 336, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
-    draw_text(40, 356, r.texture16 ? "REAL3D TEXTURE 16-BIT: PASS" : "REAL3D TEXTURE 16-BIT: FAIL");
-    draw_text(40, 376, r.texture8_low ? "REAL3D TEXTURE 8-BIT LOW: PASS" : "REAL3D TEXTURE 8-BIT LOW: FAIL");
-    draw_text(40, 396, r.texture8_high ? "REAL3D TEXTURE 8-BIT HIGH: PASS" : "REAL3D TEXTURE 8-BIT HIGH: FAIL");
+    draw_text(40, 154, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
+    draw_text(40, 172, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
+    draw_text(40, 190, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
+    draw_text(40, 208, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
+    draw_text(40, 226, r.vrom_edges ? "VROM PAGE/MIRROR/WRAP: PASS" : "VROM PAGE/MIRROR/WRAP: FAIL");
+    draw_text(40, 244, r.vrom_port ? "VROM TEXTURE PORT: PASS" : "VROM TEXTURE PORT: FAIL");
+    draw_text(40, 262, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
+    draw_text(40, 280, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
+    draw_text(40, 298, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
+    draw_text(40, 316, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
+    draw_text(40, 334, r.texture16 ? "REAL3D TEXTURE 16-BIT: PASS" : "REAL3D TEXTURE 16-BIT: FAIL");
+    draw_text(40, 352, r.texture8_low ? "REAL3D TEXTURE 8-BIT LOW: PASS" : "REAL3D TEXTURE 8-BIT LOW: FAIL");
+    draw_text(40, 370, r.texture8_high ? "REAL3D TEXTURE 8-BIT HIGH: PASS" : "REAL3D TEXTURE 8-BIT HIGH: FAIL");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d MESH:%u VERT:%u CACHE:%u",
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.meshes),
         static_cast<unsigned>(r.vertices), static_cast<unsigned>(r.cached));
-    draw_text(40, 406, line);
+    draw_text(40, 392, line);
     snprintf(line, sizeof(line), "RAM:%u TILE:%u CULL:%u/%u",
         static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes),
         static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words));
-    draw_text(40, 424, line);
+    draw_text(40, 410, line);
     snprintf(line, sizeof(line), "POLY:%u FIFO:%u TEX:%u",
         static_cast<unsigned>(r.poly_words), static_cast<unsigned>(r.fifo_capacity),
         static_cast<unsigned>(r.tex_words));
-    draw_text(40, 442, line);
+    draw_text(40, 428, line);
     snprintf(line, sizeof(line), "PVR:%u>%u HW:%u KOS:%u NAOMI:16",
         static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after),
         r.hw_mode, r.pvr_total / (1024u * 1024u));
-    draw_text(40, 460, line);
+    draw_text(40, 446, line);
     pvr_list_finish();
     pvr_scene_finish();
 }
