@@ -75,7 +75,7 @@ r3d_raster.o: $(VF3_RECOMP_DIR)/src/video/r3d_raster.cpp $(VF3_RECOMP_DIR)/src/v
 	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
 
 integration_main.o: integration_main.cpp model3.o $(VF3_RECOMP_DIR)/src/video/r3d_scene.h $(VF3_RECOMP_DIR)/src/machine/model3.h ../../platform/naomi/vf3_image.h
-	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -c $< -o $@
+	kos-c++ $(CXXFLAGS) $(CPPFLAGS) -DVF3_NAOMI -DVF3_BUILD_VERSION=\\\"$(BUILD_VERSION)\\\" -c $< -o $@
 
 $(INTEGRATION_TARGET): $(INTEGRATION_OBJS) $(SOFTFLOAT_BUILD)/softfloat.a
 	kos-c++ -Wl,--gc-sections -o $@ $(INTEGRATION_OBJS) $(SOFTFLOAT_BUILD)/softfloat.a -lm
