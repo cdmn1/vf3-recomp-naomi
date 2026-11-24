@@ -308,7 +308,7 @@ jobs:
           Commercial game data: not included
           EOF
 
-# [pack-real-vf3] Exercise the verified real-ROM packager after the executable-relative offset fix
+# [pack-real-vf3] Retry real-ROM packaging with shell-safe executable-relative payload offset
       # Download, verify and package user-supplied VF3 Revision D ROMs; guarded by pack_real_vf3
       - name: Download, verify and package user-supplied VF3 Revision D ROMs
         if: (github.event_name == 'workflow_dispatch' && inputs.pack_real_vf3) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[pack-real-vf3]'))
