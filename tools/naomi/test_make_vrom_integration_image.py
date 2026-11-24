@@ -53,6 +53,8 @@ class SyntheticImageTests(unittest.TestCase):
                 vrom_offset = descriptors[2][1]
                 stream.seek(vrom_offset + IMAGE.MODEL_BYTE_OFFSET)
                 self.assertEqual(stream.read(len(IMAGE.MODEL_BYTES)), IMAGE.MODEL_BYTES)
+                stream.seek(vrom_offset + IMAGE.VROM_EDGE_WORD_ADDRESS * 4)
+                self.assertEqual(stream.read(len(IMAGE.VROM_EDGE_BYTES)), IMAGE.VROM_EDGE_BYTES)
 
     def test_model_is_a_terminated_single_triangle(self):
         self.assertEqual(len(IMAGE.MODEL_WORDS), 19)
