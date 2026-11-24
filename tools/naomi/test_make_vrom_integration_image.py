@@ -72,8 +72,10 @@ class SyntheticImageTests(unittest.TestCase):
         self.assertTrue(IMAGE.MODEL_WORDS[6] & 0x400)
         self.assertTrue(IMAGE.MODEL_WORDS[25] & 0x400)
         self.assertEqual(IMAGE.MODEL_WORDS[14], 0x01000000)
+        self.assertEqual(IMAGE.MODEL_WORDS[16] >> 8, 0x100)  # vertex 3 Y = 2.0
         self.assertEqual(IMAGE.MODEL_WORDS[18], 0x00000100)
         self.assertEqual(IMAGE.MODEL_WORDS[33], 0x02000100)
+        self.assertEqual(IMAGE.MODEL_WORDS[35] >> 8, 0x100)  # second polygon vertex 3 Y = 2.0
         self.assertEqual(IMAGE.MODEL_WORDS[37], 0x01000200)
 
 
