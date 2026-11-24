@@ -74,7 +74,9 @@ struct Results {
     bool scene_colour = false;
     bool scene_attributes = false;
     bool pvr_scene = false;
+    bool full_scene = false;
     video::Meshes render_meshes;
+    video::Scene render_scene;
     alignas(32) uint16_t pvr_texture_pixels[32 * 32] = {};
     bool pvr_texture_source = false;
     int mount_status = 0;
@@ -470,6 +472,56 @@ static Results run_integration()
         r.pvr_scene = r.render_meshes && r.render_meshes->size() == 2 &&
             (*r.render_meshes)[0].verts.size() == 3 &&
             (*r.render_meshes)[1].verts.size() == 3;
+
+        // Build a complete synthetic Real3D viewport/culling tree in the same
+        // board memories consumed by SceneBuilder::build(). The base matrix
+        // cancels the Real3D-to-view axis swap and places the model 8 units
+        // in front of the camera. This exercises viewport, matrix, node,
+        // model lookup, mesh parsing and the production projection data path.
+        uint32_t *cull = board.cull_hi.data();
+        uint32_t *viewport = cull;
+        viewport[0] = 0;
+        viewport[1] = 0x01000000u; // no next viewport
+        viewport[2] = 0x00800300u; // first culling node
+        viewport[3] = 0x3F800000u; // texture LOD scale
+        viewport[8] = 0x3F000000u; // cv = 0.5
+        viewport[9] = 0x3F000000u; // cw = 0.5
+        viewport[10] = 0x3F000000u; // io = 0.5
+        viewport[11] = 0x3F000000u; // jo = 0.5
+        viewport[0x14] = (1536u << 16) | 1984u; // 496x384 viewport, 14.2
+        viewport[0x16] = 0x00800100u; // matrix table
+        viewport[0x17] = 0x00800200u; // LOD table
+        viewport[0x1A] = 0; // origin
+        float *matrix = reinterpret_cast<float *>(cull + 0x100);
+        matrix[0] = 8.0f; matrix[1] = 0.0f; matrix[2] = 0.0f;
+        matrix[3] = 0.0f; matrix[4] = 0.0f; matrix[5] = -1.0f;
+        matrix[6] = 1.0f; matrix[7] = 0.0f; matrix[8] = 0.0f;
+        matrix[9] = 0.0f; matrix[10] = -1.0f; matrix[11] = 0.0f;
+        float *lod = reinterpret_cast<float *>(cull + 0x200);
+        lod[6] = 0.0f;
+        lod[7] = 8.0f;
+        uint32_t *node = cull + 0x300;
+        node[0] = 1u;
+        node[1] = 0u;
+        node[5] = 0x01100000u; // VROM model at word address 0x00100000
+        node[6] = 0u;          // no sibling
+        node[7] = 0x3C003C00u; // culling and blend radii = 1.0
+
+        video::SceneBuilder full_builder;
+        full_builder.build(board, r.render_scene);
+        r.full_scene = r.render_scene.viewports.size() == 1 &&
+            r.render_scene.viewports[0].models.size() == 1 &&
+            r.render_scene.viewports[0].models[0].meshes &&
+            r.render_scene.viewports[0].models[0].meshes->size() == 2;
+        if (r.full_scene) {
+            const video::Model &model = r.render_scene.viewports[0].models[0];
+            r.pvr_scene = model.meshes &&
+                (*model.meshes)[0].verts.size() == 3 &&
+                (*model.meshes)[1].verts.size() == 3 &&
+                r.render_scene.viewports[0].vp_w == 496.0f &&
+                r.render_scene.viewports[0].vp_h == 384.0f &&
+                model.matrix.m[14] < 0.0f;
+        }
     }
     return r;
 }
@@ -551,32 +603,58 @@ static void draw_scene_texture()
     pvr_prim(&v, sizeof(v));
 }
 
-static void draw_scene_meshes(const Results &r)
+static void draw_scene_builder_output(const Results &r)
 {
-    if (!r.render_meshes) return;
-    pvr_poly_cxt_t cxt;
-    pvr_poly_hdr_t header;
-    pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
-    cxt.gen.culling = PVR_CULLING_NONE;
-    pvr_poly_compile(&header, &cxt);
-    pvr_prim(&header, sizeof(header));
-    for (size_t m = 0; m < r.render_meshes->size(); ++m) {
-        const video::Mesh &mesh = (*r.render_meshes)[m];
-        if (mesh.verts.size() != 3) continue;
-        for (size_t i = 0; i < 3; ++i) {
-            const video::Vertex &source = mesh.verts[i];
-            pvr_vertex_t vertex{};
-            vertex.flags = i == 2 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
-            vertex.x = 470.0f + source.pos[0] * 32.0f;
-            vertex.y = 145.0f + source.pos[1] * 32.0f;
-            vertex.z = 1.0f;
-            vertex.u = 0.0f;
-            vertex.v = 0.0f;
-            vertex.argb = PVR_PACK_COLOR(
-                source.colour[3] / 255.0f, source.colour[0] / 255.0f,
-                source.colour[1] / 255.0f, source.colour[2] / 255.0f);
-            vertex.oargb = 0;
-            pvr_prim(&vertex, sizeof(vertex));
+    for (const video::Viewport &viewport : r.render_scene.viewports) {
+        for (const video::Model &model : viewport.models) {
+            if (!model.meshes) continue;
+            for (const video::Mesh &mesh : *model.meshes) {
+                pvr_poly_cxt_t cxt;
+                pvr_poly_hdr_t header;
+                const bool textured = mesh.textured && scene_texture_ready &&
+                    mesh.width > 0 && mesh.height > 0;
+                if (textured) {
+                    pvr_poly_cxt_txr(&cxt, PVR_LIST_OP_POLY,
+                        PVR_TXRFMT_RGB565 | PVR_TXRFMT_NONTWIDDLED,
+                        32, 32, scene_texture, PVR_FILTER_NONE);
+                } else {
+                    pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
+                }
+                cxt.gen.culling = PVR_CULLING_NONE;
+                pvr_poly_compile(&header, &cxt);
+                pvr_prim(&header, sizeof(header));
+
+                for (size_t first = 0; first + 2 < mesh.verts.size(); first += 3) {
+                    for (size_t j = 0; j < 3; ++j) {
+                        const video::Vertex &source = mesh.verts[first + j];
+                        const float *m = model.matrix.m;
+                        const float vx = m[0] * source.pos[0] + m[4] * source.pos[1] +
+                            m[8] * source.pos[2] + m[12];
+                        const float vy = m[1] * source.pos[0] + m[5] * source.pos[1] +
+                            m[9] * source.pos[2] + m[13];
+                        const float vz = m[2] * source.pos[0] + m[6] * source.pos[1] +
+                            m[10] * source.pos[2] + m[14];
+                        const float depth = -vz;
+                        if (depth <= 0.001f) continue;
+                        pvr_vertex_t vertex{};
+                        vertex.flags = j == 2 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
+                        vertex.x = viewport.vp_x + viewport.vp_w *
+                            (vx / depth - viewport.left) / (viewport.right - viewport.left);
+                        vertex.y = viewport.vp_y + viewport.vp_h *
+                            (viewport.top - vy / depth) / (viewport.top - viewport.bottom);
+                        vertex.z = 1.0f;
+                        vertex.u = textured ? source.uv[0] / float(mesh.width) : 0.0f;
+                        vertex.v = textured ? source.uv[1] / float(mesh.height) : 0.0f;
+                        vertex.argb = PVR_PACK_COLOR(
+                            model.alpha * source.colour[3] / 255.0f,
+                            source.colour[0] / 255.0f,
+                            source.colour[1] / 255.0f,
+                            source.colour[2] / 255.0f);
+                        vertex.oargb = 0;
+                        pvr_prim(&vertex, sizeof(vertex));
+                    }
+                }
+            }
         }
     }
 }
@@ -586,8 +664,7 @@ static void draw_screen(const Results &r)
     pvr_wait_ready();
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_OP_POLY);
-    draw_scene_meshes(r);
-    draw_scene_texture();
+    draw_scene_builder_output(r);
     pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
     draw_text(40, 48, "VF3 NAOMI - MODEL3 INTEGRATION");
