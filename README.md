@@ -49,11 +49,14 @@ PPC bus reads/writes, and the upstream SceneBuilder parser/cache.
 Its PPC-programmed Real3D DMA probe transfers marker words from PPC RAM into
 tile RAM, low culling RAM, high culling RAM, and polygon RAM. It also enables DMA completion reporting, reads the completion status, and
 acknowledges the completion interrupt. The probe then DMA-writes a synthetic
-32x32 16-bit texture record into the Real3D texture FIFO, issues the flush
-register, and checks decoded texels in texture RAM. These checks validate the
+32x32 16-bit texture record with unique values into the Real3D texture FIFO,
+issues the flush register, and checks the upstream 8x8 tiled decode, X/Y
+placement, second texture page, tile boundaries, and untouched locations. These checks validate the
 mapped bus, DMA and texture-upload memory paths; they do not yet demonstrate a
-complete VF3 boot or rendered game frame. The v154 integration ROM passed the
-DMA and completion checks in Flycast; the expanded texture test is being built.
+complete VF3 boot or rendered game frame. The v155 integration ROM passed the
+texture FIFO upload and decode checks in Flycast. The next test revision uses
+non-uniform texels and a non-zero second-page destination to validate the
+upstream 8x8 texel permutation, tile boundaries, byte order, and placement.
 
 The image contains synthetic markers and a tiny synthetic triangle only. No
 commercial VF3 ROMs, executables, or extracted game assets are included.
