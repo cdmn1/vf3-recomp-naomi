@@ -36,8 +36,8 @@ const Profile VF3_REV_D = [] {
 }();
 }
 
-// This probe mounts the synthetic NetDIMM image, initializes the real Model3
-// board storage, and invokes the production SceneBuilder parser/cache.
+// This probe mounts either the synthetic fixture or real Revision D ROM image,
+// initializes the Model3 board, and exercises the production storage/render paths.
 
 static const uint32_t expected_vrom_edge[8] = {
     0xE0010001u, 0xE0020002u, 0xE0030003u, 0x00000040u,
