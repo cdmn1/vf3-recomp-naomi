@@ -112,6 +112,11 @@ struct Results {
     uint32_t real_boot_msr = 0, real_boot_npc = 0, real_boot_dec = 0;
     uint32_t real_boot_instruction = 0, real_boot_cr0 = 0;
     int real_boot_interrupt_pending = 0;
+    uint32_t real_boot_idle_samples = 0;
+    uint32_t real_boot_poll_op = 0, real_boot_poll_addr = 0;
+    uint32_t real_boot_poll_value = 0xFFFFFFFFu;
+    uint32_t real_boot_irq_pending_or = 0, real_boot_irq_state_or = 0;
+    uint32_t real_boot_srr0_changes = 0;
     size_t real_program_match_words = 0;
     size_t real_scene_viewports = 0;
     size_t real_scene_models = 0;
@@ -454,11 +459,32 @@ static Results run_integration()
         board.power_on();
         draw_boot_progress(0, board.cpu.s.pc, 0);
         uint32_t previous_pc = board.cpu.s.pc;
-        // Give the real boot ROM enough emulated time to leave its short reset
-        // sequence, while recording whether execution is actually progressing.
-        for (uint32_t frame = 0; frame < 300 && !board.cpu.s.fatal; ++frame) {
+        uint32_t previous_srr0 = board.cpu.s.srr0;
+        // Match the upstream Revision D profile's 960-frame boot window.
+        // Sample the documented interrupt-driven idle poll and interrupt state.
+        for (uint32_t frame = 0; frame < 960 && !board.cpu.s.fatal; ++frame) {
             board.run_frame();
             ++r.real_boot_frames;
+            r.real_boot_irq_pending_or |= static_cast<uint32_t>(board.cpu.s.interrupt_pending);
+            r.real_boot_irq_state_or |= board.irq.state;
+            if (board.cpu.s.srr0 != previous_srr0) {
+                ++r.real_boot_srr0_changes;
+                previous_srr0 = board.cpu.s.srr0;
+            }
+            const uint32_t sampled_pc = board.cpu.s.pc;
+            if (sampled_pc >= 0x1E9FCu && sampled_pc <= 0x1EA04u)
+                ++r.real_boot_idle_samples;
+            const uint32_t poll_pc = sampled_pc == 0x1E9FCu ? sampled_pc :
+                (board.cpu.s.npc == 0x1E9FCu ? board.cpu.s.npc : 0u);
+            if (poll_pc) {
+                const uint32_t op = reinterpret_cast<const uint32_t *>(board.ram.data())[poll_pc / 4u];
+                const uint32_t ra = (op >> 16) & 31u;
+                const int32_t displacement = static_cast<int16_t>(op & 0xFFFFu);
+                const uint32_t base = ra ? board.cpu.s.r[ra] : 0u;
+                r.real_boot_poll_op = op;
+                r.real_boot_poll_addr = base + static_cast<uint32_t>(displacement);
+                r.real_boot_poll_value = board.read8(r.real_boot_poll_addr);
+            }
             if ((frame + 1u) % 25u == 0u)
                 draw_boot_progress(frame + 1u, board.cpu.s.pc, board.cpu.s.total_cycles);
             if (board.cpu.s.pc != previous_pc) {
@@ -740,7 +766,7 @@ static void draw_boot_progress(uint32_t frame, uint32_t pc, uint64_t cycles)
     pvr_list_begin(PVR_LIST_TR_POLY);
     char line[64];
     draw_text(40, 48, "VF3 REV D - PPC BOOT IN PROGRESS");
-    snprintf(line, sizeof(line), "FRAME: %u / 300", frame);
+    snprintf(line, sizeof(line), "FRAME: %u / 960", frame);
     draw_text(40, 84, line);
     snprintf(line, sizeof(line), "PPC PC: %08X", pc);
     draw_text(40, 108, line);
@@ -896,7 +922,7 @@ static void draw_screen(const Results &r)
         draw_text(40, 318, line);
         snprintf(line, sizeof(line), "PPC NPC:%08X SRR1:%08X", r.real_boot_npc, r.real_boot_srr1);
         draw_text(40, 336, line);
-        snprintf(line, sizeof(line), "PPC IRQ:%d DEC:%08X CR0:%X", r.real_boot_interrupt_pending, r.real_boot_dec, r.real_boot_cr0);
+        snprintf(line, sizeof(line), "IRQ:%X/%X DEC:%08X", r.real_boot_irq_pending_or, r.real_boot_irq_state_or, r.real_boot_dec);
         draw_text(40, 354, line);
     }
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d NZ:%u MESH:%u VERT:%u",
@@ -916,9 +942,10 @@ static void draw_screen(const Results &r)
             r.scene_geometry ? 1u : 0u, r.scene_colour ? 1u : 0u,
             r.scene_attributes ? 1u : 0u);
     } else {
-        snprintf(line, sizeof(line), "PPC CYC:%08X PCSTEP:%u",
+        snprintf(line, sizeof(line), "PPC CYC:%08X STEP:%u EXC:%u",
             static_cast<unsigned>(r.real_boot_cycles),
-            static_cast<unsigned>(r.real_boot_pc_changes));
+            static_cast<unsigned>(r.real_boot_pc_changes),
+            static_cast<unsigned>(r.real_boot_srr0_changes));
         draw_text(40, 408, line);
         snprintf(line, sizeof(line), "VF3 BOOT:%u PC:%08X",
             static_cast<unsigned>(r.real_boot_frames), r.real_boot_pc);
@@ -927,9 +954,15 @@ static void draw_screen(const Results &r)
     draw_text(40, 444, r.synthetic_fixture ?
         (r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL") :
         (r.real_scene ? "REAL VF3 SCENE -> PVR2: PASS" : "REAL VF3 SCENE -> PVR2: WAIT"));
-    draw_text(40, 462, r.synthetic_fixture ?
-        (scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL") :
-        (r.real_program_copied ? "VF3 PPC PROGRAM COPY: PASS" : "VF3 PPC PROGRAM COPY: WAIT"));
+    if (r.synthetic_fixture)
+        draw_text(40, 462, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
+    else {
+        snprintf(line, sizeof(line), "COPY:%s IDLE:%u %08X=%02X",
+            r.real_program_copied ? "PASS" : "WAIT",
+            static_cast<unsigned>(r.real_boot_idle_samples),
+            r.real_boot_poll_addr, static_cast<unsigned>(r.real_boot_poll_value & 0xFFu));
+        draw_text(40, 462, line);
+    }
     pvr_list_finish();
     pvr_scene_finish();
 }
