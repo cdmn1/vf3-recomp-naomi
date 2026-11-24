@@ -171,9 +171,14 @@ static Results run_integration()
             texture_pattern[i] = static_cast<uint16_t>(0x1000u + i);
         texture_record[0] = 0xFC0F0000u; // bswap(4092): 2046 16-bit units after the two-word prefix
         texture_record[1] = 0x81009001u; // bswap(0x01900081): X=32, Y=32, page 1, 32x32, no mipmaps
-        for (unsigned i = 0; i < 512; ++i)
-            texture_record[i + 2] =
+        for (unsigned i = 0; i < 512; ++i) {
+            const uint32_t fifo_word =
                 (uint32_t(texture_pattern[i * 2 + 1]) << 16) | texture_pattern[i * 2];
+            // write32(0x94) byte-swaps each DMA word before storing it in
+            // tex_fifo. Pre-swap the source so the FIFO's uint16_t stream is
+            // exactly texture_pattern[0..1023] on the little-endian target.
+            texture_record[i + 2] = __builtin_bswap32(fifo_word);
+        }
         program[0] = 0x3DE08400u; // lis r15, 0x8400 (Real3D register window)
         program[1] = 0x820F0000u; // lwz r16, 0(r15)
         program[2] = 0x3E20C200u; // lis r17, 0xC200 (Real3D DMA registers)
