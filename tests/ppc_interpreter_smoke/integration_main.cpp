@@ -51,6 +51,7 @@ struct Results {
     bool real3d_bus = false;
     bool texture16 = false, texture8_low = false, texture8_high = false;
     bool crom = false;
+    bool crom_cache = false;
     bool vrom = false;
     bool scene = false;
     int mount_status = 0;
@@ -362,6 +363,28 @@ static Results run_integration()
              naomi_model3_crom_read8(3) == 0x24u &&
              naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
 
+    // Exercise all four bank-page cache slots, force page-zero eviction,
+    // then verify the page is fetched again with the original marker intact.
+    // Also switch banks and verify the active-low register's mirrored bank
+    // 11 aliases physical bank 3 after the bank cache is invalidated.
+    if (r.crom) {
+        bool pages_ok = true;
+        for (uint32_t page = 1; page <= 4; ++page)
+            pages_ok = pages_ok &&
+                naomi_model3_crom_read8(page * NAOMI_CART_CROM_PAGE_SIZE) == 0u;
+        const bool page_zero_refetched =
+            naomi_model3_crom_read8(0) == 0xE0u;
+        const bool bank_four_selected =
+            naomi_model3_crom_select_bank(0xFBu) &&
+            naomi_model3_crom_read8(0) == 0u;
+        const bool mirrored_bank_selected =
+            naomi_model3_crom_select_bank(0xF4u) &&
+            naomi_model3_crom_read8(0) == 0xE0u;
+        r.crom_cache = pages_ok && page_zero_refetched &&
+            bank_four_selected && mirrored_bank_selected &&
+            naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
+    }
+
     alignas(32) uint32_t actual_model[19] = {};
     r.vrom_status = naomi_model3_vrom_read_words(0x00100000u, actual_model, 19);
     r.vrom = r.vrom_status == NAOMI_CART_VROM_OK &&
@@ -440,7 +463,7 @@ static void draw_screen(const Results &r)
     draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
     draw_text(40, 136, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
     draw_text(40, 156, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
-    draw_text(40, 176, r.crom ? "FIXED/BANKED CROM: PASS" : "FIXED/BANKED CROM: FAIL");
+    draw_text(40, 176, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
     draw_text(40, 196, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
     draw_text(40, 216, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
     draw_text(40, 236, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
