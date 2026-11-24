@@ -30,6 +30,65 @@ class PackerTests(unittest.TestCase):
         self.assertEqual(PACKER.to_sh4_word_order(source),
                          bytearray.fromhex("78563412 efcdab90"))
 
+    def test_pack_replaces_existing_payload_at_runtime_offset(self):
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = root / "synthetic.bin"
+            rom_zip = root / "roms.zip"
+            output = root / "real-vf3.bin"
+            payload_offset = 0x1000
+            test_regions = {
+                "fixed_crom": (1, 8),
+                "banked_crom": (2, 16),
+                "vrom": (3, 8),
+            }
+            data = {
+                "fixed_crom": bytearray(b"FIXED123"),
+                "banked_crom": bytearray(b"BANKED-REGION!!"),
+                "vrom": bytearray(b"VROMDATA"),
+            }
+            offsets = {}
+            current = payload_offset + PACKER.HEADER_SIZE
+            descriptors = []
+            for name, (region_id, _) in test_regions.items():
+                offsets[name] = current
+                region = data[name]
+                descriptors.append({
+                    "id": region_id, "offset": current, "size": len(region),
+                    "crc32": zlib.crc32(region) & 0xFFFFFFFF,
+                })
+                current = PACKER.align_up(current + len(region))
+            original_header = PACKER.make_header(1, current - payload_offset, descriptors)
+            with base.open("wb") as stream:
+                stream.write(bytes([0xA5]) * payload_offset)
+                stream.write(original_header)
+                stream.write(bytes(current - payload_offset - PACKER.HEADER_SIZE))
+            rom_zip.write_bytes(b"mocked ROM archive")
+            replacement = {
+                "fixed_crom": bytearray(b"REALFIXD"),
+                "banked_crom": bytearray(b"REAL-BANKED-DATA"),
+                "vrom": bytearray(b"REALVROM"),
+            }
+            with mock.patch.object(PACKER, "REGIONS", test_regions):
+                with mock.patch.object(PACKER, "load_verified_roms", return_value=replacement):
+                    manifest = PACKER.pack(base, rom_zip, output, payload_offset)
+
+            self.assertEqual(manifest["payload_offset"], payload_offset)
+            self.assertEqual(manifest["image_size"], current)
+            self.assertEqual(output.stat().st_size, current)
+            with output.open("rb") as stream:
+                stream.seek(payload_offset)
+                self.assertEqual(stream.read(PACKER.HEADER_SIZE)[:8], PACKER.MAGIC)
+                for name, region in replacement.items():
+                    stream.seek(offsets[name])
+                    self.assertEqual(stream.read(len(region)), bytes(region))
+            with base.open("rb") as stream:
+                stream.seek(payload_offset)
+                self.assertEqual(stream.read(PACKER.HEADER_SIZE), original_header)
+
     def test_header_contains_absolute_region_offsets_and_crc(self):
         regions = [{"id": 1, "offset": 0x01001000,
                     "size": 0x800000, "crc32": 0x12345678}]
