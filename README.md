@@ -40,6 +40,22 @@ GitHub Actions builds a versioned Naomi ROM. The ROM contains no commercial game
 - Do not claim playable compatibility until it has actually been demonstrated.
 
 
+## Model 3 / NetDIMM integration probe
+
+The synthetic Naomi integration ROM now exercises the production NetDIMM image
+mount, fixed and banked CROM access, VROM streaming, Model 3 board initialization,
+PPC bus reads/writes, and the upstream SceneBuilder parser/cache.
+
+Its PPC-programmed Real3D DMA probe transfers marker words from PPC RAM into
+tile RAM, low culling RAM, high culling RAM, and polygon RAM. It also enables
+DMA completion reporting, reads the completion status, and acknowledges the
+completion interrupt. These checks validate the mapped bus and memory paths;
+they do not yet demonstrate a complete VF3 boot, texture upload, or rendered
+game frame. The v153 integration ROM passed this probe in Flycast.
+
+The image contains synthetic markers and a tiny synthetic triangle only. No
+commercial VF3 ROMs, executables, or extracted game assets are included.
+
 ## PPC floating-point rounding
 
 The Naomi SH-4 build uses Berkeley SoftFloat Release 3e for the PPC interpreter's
