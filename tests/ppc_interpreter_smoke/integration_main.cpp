@@ -150,9 +150,17 @@ static Results run_integration()
 
     const uint8_t *fixed = naomi_model3_crom_fixed();
     const int bank_selected = naomi_model3_crom_select_bank(0xFCu); // bank 3
-    const uint32_t bank_word = naomi_model3_crom_read32(0);
-    r.crom = fixed && fixed[0] == 0 && fixed[1] == 0 &&
-             bank_selected && bank_word == 0 &&
+    // The synthetic image deliberately places non-zero bus markers in both
+    // CROM regions. Check the exact little-endian bytes rather than expecting
+    // zero-filled ROM; the PPC bus probe independently checks SH-4/PPC words.
+    r.crom = fixed &&
+             fixed[0] == 0xDFu && fixed[1] == 0x9Bu &&
+             fixed[2] == 0x57u && fixed[3] == 0x13u &&
+             bank_selected &&
+             naomi_model3_crom_read8(0) == 0xE0u &&
+             naomi_model3_crom_read8(1) == 0xACu &&
+             naomi_model3_crom_read8(2) == 0x68u &&
+             naomi_model3_crom_read8(3) == 0x24u &&
              naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
 
     alignas(32) uint32_t actual_model[19] = {};
