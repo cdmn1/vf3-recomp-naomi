@@ -99,6 +99,14 @@ struct Results {
     bool program_rom = false;
     size_t real_vrom_nonzero = 0;
     size_t program_rom_nonblank = 0;
+    bool real_boot = false;
+    bool real_program_copied = false;
+    bool real_scene = false;
+    uint32_t real_boot_frames = 0;
+    uint32_t real_boot_pc = 0;
+    size_t real_program_match_words = 0;
+    size_t real_scene_viewports = 0;
+    size_t real_scene_models = 0;
 };
 
 static Results run_integration()
@@ -158,7 +166,9 @@ static Results run_integration()
                   board.tex_ram.size() == 2048u * 2048u;
     }
 
-    if (r.board_load) {
+    if (r.board_load && r.synthetic_fixture) {
+        // Synthetic-only PPC, Real3D bus, texture and scene fixtures.
+        // Real Revision D must execute its own reset ROM instead.
         // Capture actual ROM words before exercising the PPC bus. The real-ROM
         // image uses these as reference values; the synthetic fixture uses its
         // explicit bus markers below.
@@ -425,6 +435,48 @@ static Results run_integration()
                           board.tex_ram[88u * 2048u + 120u] == 0xADA5u &&
                           board.tex_ram[64u * 2048u + 95u] == 0xA5BBu &&
                           !board.cpu.s.fatal;
+    }
+
+    if (r.board_load && !r.synthetic_fixture) {
+        // Start the real Model 3 PPC at its hardware reset vector. The boot ROM
+        // is expected to copy the Revision D game program (CROM 0x710000,
+        // 0xA0000 bytes) into PPC RAM before transferring control to it.
+        board.power_on();
+        for (uint32_t frame = 0; frame < 8 && !board.cpu.s.fatal; ++frame) {
+            board.run_frame();
+            ++r.real_boot_frames;
+        }
+        r.real_boot_pc = board.cpu.s.pc;
+        r.real_boot = board.cpu.s.total_cycles != 0 &&
+            r.real_boot_pc != 0xFFF00100u && !board.cpu.s.fatal;
+        r.crom_bus = r.real_boot;
+
+        const std::vector<uint32_t> program_image = board.program_image();
+        const size_t program_words = program_image.size();
+        const uint32_t *ram_words = reinterpret_cast<const uint32_t *>(board.ram.data());
+        while (r.real_program_match_words < program_words &&
+               ram_words[r.real_program_match_words] == program_image[r.real_program_match_words])
+            ++r.real_program_match_words;
+        r.real_program_copied = r.real_program_match_words == program_words;
+
+        // Ask the production SceneBuilder to parse whatever the real game has
+        // produced so far in culling/polygon RAM. Empty output is a valid
+        // early-boot result; the counters show how far the game has progressed.
+        video::SceneBuilder builder;
+        builder.build(board, r.render_scene);
+        r.real_scene_viewports = r.render_scene.viewports.size();
+        for (const video::Viewport &viewport : r.render_scene.viewports) {
+            r.real_scene_models += viewport.models.size();
+            for (const video::Model &model : viewport.models) {
+                if (!model.meshes) continue;
+                for (const video::Mesh &mesh : *model.meshes)
+                    r.vertices += mesh.verts.size();
+            }
+        }
+        r.meshes = r.real_scene_models;
+        r.real_scene = r.real_scene_viewports != 0 &&
+            r.real_scene_models != 0 && r.vertices != 0;
+        r.pvr_scene = r.real_scene;
     }
 
     const uint8_t *fixed = naomi_model3_crom_fixed();
@@ -747,7 +799,9 @@ static void draw_screen(const Results &r)
         (r.board_load && r.program_rom ? "MODEL3 LOAD / VF3 PPC ROM: PASS" :
                                         "MODEL3 LOAD / VF3 PPC ROM: FAIL"));
     draw_text(40, 156, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
-    draw_text(40, 174, r.power_ppc ? "SYNTHETIC PPC CORE SMOKE: PASS" : "SYNTHETIC PPC CORE SMOKE: FAIL");
+    draw_text(40, 174, r.synthetic_fixture ?
+        (r.power_ppc ? "SYNTHETIC PPC CORE SMOKE: PASS" : "SYNTHETIC PPC CORE SMOKE: FAIL") :
+        (r.real_boot ? "REAL VF3 PPC BOOT ROM: PASS" : "REAL VF3 PPC BOOT ROM: FAIL"));
     draw_text(40, 192, r.synthetic_fixture ?
         (r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL") :
         (r.real_vrom ? "REAL VF3 VROM READ: PASS" : "REAL VF3 VROM READ: FAIL"));
@@ -757,15 +811,27 @@ static void draw_screen(const Results &r)
     draw_text(40, 228, r.synthetic_fixture ?
         (r.vrom_port ? "VROM TEXTURE PORT: PASS" : "VROM TEXTURE PORT: FAIL") :
         "VROM SYNTHETIC TEXTURE TEST: N/A");
-    draw_text(40, 246, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
-    draw_text(40, 264, r.tile_bus ? "SYNTHETIC PPC TILE BUS: PASS" : "SYNTHETIC PPC TILE BUS: FAIL");
+    draw_text(40, 246, r.synthetic_fixture ?
+        (r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL") :
+        (r.crom_bus ? "REAL PPC CROM INSTRUCTION FETCH: PASS" : "REAL PPC CROM INSTRUCTION FETCH: FAIL"));
+    draw_text(40, 264, r.synthetic_fixture ?
+        (r.tile_bus ? "SYNTHETIC PPC TILE BUS: PASS" : "SYNTHETIC PPC TILE BUS: FAIL") :
+        "SYNTHETIC PPC TILE BUS: N/A");
     draw_text(40, 282, r.synthetic_fixture ?
         (r.scene ? "SCENEBUILDER GEOMETRY/ATTR/CACHE: PASS" : "SCENEBUILDER GEOMETRY/ATTR/CACHE: FAIL") :
         "SCENEBUILDER SYNTHETIC MODEL: N/A");
-    draw_text(40, 300, r.real3d_bus ? "SYNTHETIC REAL3D REG/DMA: PASS" : "SYNTHETIC REAL3D REG/DMA: FAIL");
-    draw_text(40, 318, r.texture16 ? "SYNTHETIC REAL3D TEX 16-BIT: PASS" : "SYNTHETIC REAL3D TEX 16-BIT: FAIL");
-    draw_text(40, 336, r.texture8_low ? "SYNTHETIC REAL3D TEX 8-LOW: PASS" : "SYNTHETIC REAL3D TEX 8-LOW: FAIL");
-    draw_text(40, 354, r.texture8_high ? "SYNTHETIC REAL3D TEX 8-HIGH: PASS" : "SYNTHETIC REAL3D TEX 8-HIGH: FAIL");
+    draw_text(40, 300, r.synthetic_fixture ?
+        (r.real3d_bus ? "SYNTHETIC REAL3D REG/DMA: PASS" : "SYNTHETIC REAL3D REG/DMA: FAIL") :
+        "SYNTHETIC REAL3D REG/DMA: N/A");
+    draw_text(40, 318, r.synthetic_fixture ?
+        (r.texture16 ? "SYNTHETIC REAL3D TEX 16-BIT: PASS" : "SYNTHETIC REAL3D TEX 16-BIT: FAIL") :
+        "SYNTHETIC REAL3D TEX 16-BIT: N/A");
+    draw_text(40, 336, r.synthetic_fixture ?
+        (r.texture8_low ? "SYNTHETIC REAL3D TEX 8-LOW: PASS" : "SYNTHETIC REAL3D TEX 8-LOW: FAIL") :
+        "SYNTHETIC REAL3D TEX 8-LOW: N/A");
+    draw_text(40, 354, r.synthetic_fixture ?
+        (r.texture8_high ? "SYNTHETIC REAL3D TEX 8-HIGH: PASS" : "SYNTHETIC REAL3D TEX 8-HIGH: FAIL") :
+        "SYNTHETIC REAL3D TEX 8-HIGH: N/A");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d NZ:%u MESH:%u VERT:%u",
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.real_vrom_nonzero),
@@ -784,14 +850,15 @@ static void draw_screen(const Results &r)
             r.scene_geometry ? 1u : 0u, r.scene_colour ? 1u : 0u,
             r.scene_attributes ? 1u : 0u);
     else
-        snprintf(line, sizeof(line), "SCENE BUILD: N/A (GAME NOT RUNNING)");
+        snprintf(line, sizeof(line), "VF3 BOOT:%u PC:%08X",
+            static_cast<unsigned>(r.real_boot_frames), r.real_boot_pc);
     draw_text(40, 426, line);
     draw_text(40, 444, r.synthetic_fixture ?
         (r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL") :
-        "SCENEBUILDER -> PVR2: N/A (NO GAME SCENE)");
+        (r.real_scene ? "REAL VF3 SCENE -> PVR2: PASS" : "REAL VF3 SCENE -> PVR2: WAIT"));
     draw_text(40, 462, r.synthetic_fixture ?
         (scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL") :
-        "SYNTHETIC TEXTURE UPLOAD: N/A");
+        (r.real_program_copied ? "VF3 PPC PROGRAM COPY: PASS" : "VF3 PPC PROGRAM COPY: WAIT"));
     pvr_list_finish();
     pvr_scene_finish();
 }
