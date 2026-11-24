@@ -106,6 +106,9 @@ struct Results {
     uint32_t real_boot_pc = 0;
     uint32_t real_boot_pc_changes = 0;
     uint64_t real_boot_cycles = 0;
+    uint32_t real_boot_r1 = 0, real_boot_r2 = 0;
+    uint32_t real_boot_lr = 0, real_boot_srr0 = 0;
+    uint32_t real_boot_msr = 0, real_boot_instruction = 0;
     size_t real_program_match_words = 0;
     size_t real_scene_viewports = 0;
     size_t real_scene_models = 0;
@@ -447,7 +450,7 @@ static Results run_integration()
         uint32_t previous_pc = board.cpu.s.pc;
         // Give the real boot ROM enough emulated time to leave its short reset
         // sequence, while recording whether execution is actually progressing.
-        for (uint32_t frame = 0; frame < 120 && !board.cpu.s.fatal; ++frame) {
+        for (uint32_t frame = 0; frame < 300 && !board.cpu.s.fatal; ++frame) {
             board.run_frame();
             ++r.real_boot_frames;
             if (board.cpu.s.pc != previous_pc) {
@@ -457,6 +460,13 @@ static Results run_integration()
         }
         r.real_boot_pc = board.cpu.s.pc;
         r.real_boot_cycles = board.cpu.s.total_cycles;
+        r.real_boot_r1 = board.cpu.s.r[1];
+        r.real_boot_r2 = board.cpu.s.r[2];
+        r.real_boot_lr = board.cpu.s.lr;
+        r.real_boot_srr0 = board.cpu.s.srr0;
+        r.real_boot_msr = board.cpu.s.msr;
+        if (r.real_boot_pc < board.ram.size())
+            r.real_boot_instruction = reinterpret_cast<const uint32_t *>(board.ram.data())[r.real_boot_pc / 4];
         r.real_boot = r.real_boot_cycles != 0 &&
             r.real_boot_pc != 0xFFF00100u && !board.cpu.s.fatal;
         r.crom_bus = r.real_boot;
@@ -824,15 +834,24 @@ static void draw_screen(const Results &r)
     draw_text(40, 246, r.synthetic_fixture ?
         (r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL") :
         (r.crom_bus ? "REAL PPC CROM INSTRUCTION FETCH: PASS" : "REAL PPC CROM INSTRUCTION FETCH: FAIL"));
-    draw_text(40, 264, r.synthetic_fixture ?
-        (r.tile_bus ? "SYNTHETIC PPC TILE BUS: PASS" : "SYNTHETIC PPC TILE BUS: FAIL") :
-        "SYNTHETIC PPC TILE BUS: N/A");
-    draw_text(40, 282, r.synthetic_fixture ?
-        (r.scene ? "SCENEBUILDER GEOMETRY/ATTR/CACHE: PASS" : "SCENEBUILDER GEOMETRY/ATTR/CACHE: FAIL") :
-        "SCENEBUILDER SYNTHETIC MODEL: N/A");
-    draw_text(40, 300, r.synthetic_fixture ?
-        (r.real3d_bus ? "SYNTHETIC REAL3D REG/DMA: PASS" : "SYNTHETIC REAL3D REG/DMA: FAIL") :
-        "SYNTHETIC REAL3D REG/DMA: N/A");
+    if (r.synthetic_fixture)
+        draw_text(40, 264, r.tile_bus ? "SYNTHETIC PPC TILE BUS: PASS" : "SYNTHETIC PPC TILE BUS: FAIL");
+    else {
+        snprintf(line, sizeof(line), "PPC R1:%08X R2:%08X", r.real_boot_r1, r.real_boot_r2);
+        draw_text(40, 264, line);
+    }
+    if (r.synthetic_fixture)
+        draw_text(40, 282, r.scene ? "SCENEBUILDER GEOMETRY/ATTR/CACHE: PASS" : "SCENEBUILDER GEOMETRY/ATTR/CACHE: FAIL");
+    else {
+        snprintf(line, sizeof(line), "PPC LR:%08X SRR0:%08X", r.real_boot_lr, r.real_boot_srr0);
+        draw_text(40, 282, line);
+    }
+    if (r.synthetic_fixture)
+        draw_text(40, 300, r.real3d_bus ? "SYNTHETIC REAL3D REG/DMA: PASS" : "SYNTHETIC REAL3D REG/DMA: FAIL");
+    else {
+        snprintf(line, sizeof(line), "PPC OP:%08X MSR:%08X", r.real_boot_instruction, r.real_boot_msr);
+        draw_text(40, 300, line);
+    }
     draw_text(40, 318, r.synthetic_fixture ?
         (r.texture16 ? "SYNTHETIC REAL3D TEX 16-BIT: PASS" : "SYNTHETIC REAL3D TEX 16-BIT: FAIL") :
         "SYNTHETIC REAL3D TEX 16-BIT: N/A");
