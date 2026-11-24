@@ -6,10 +6,12 @@
 #include <stdio.h>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "vf3_image.h"
 #include "cart_vrom_bridge.h"
 #include "cart_vrom.h"
+#include "cart_vrom_bridge.h"
 #include "r3d_scene.h"
 #include "model3.h"
 
@@ -34,8 +36,8 @@ const Profile VF3_REV_D = [] {
 // board storage, and invokes the production SceneBuilder parser/cache.
 
 static const uint32_t expected_vrom_edge[8] = {
-    0xE0010001u, 0xE0020002u, 0xE0030003u, 0xE0040004u,
-    0xE0050005u, 0xE0060006u, 0xE0070007u, 0xE0080008u
+    0xE0010001u, 0xE0020002u, 0xE0030003u, 0x00000040u,
+    0xD0010001u, 0xD0020002u, 0xD0030003u, 0xD0040004u
 };
 
 static const uint32_t expected_model[19] = {
@@ -59,6 +61,7 @@ struct Results {
     bool crom_cache = false;
     bool vrom = false;
     bool vrom_edges = false;
+    bool vrom_port = false;
     bool scene = false;
     int mount_status = 0;
     int vrom_status = 0;
@@ -411,6 +414,19 @@ static Results run_integration()
         wrap_status == NAOMI_CART_VROM_OK &&
         std::memcmp(wrapped_words, expected_model, sizeof(expected_model)) == 0;
 
+    // Exercise the production texture-port bridge: the length header is the
+    // final word of one 64 KiB scratch page and its payload crosses into the next.
+    std::vector<uint32_t> texture_port_fifo;
+    const int texture_port_called = naomi_model3_vrom_port(0x00003FFFu, &texture_port_fifo);
+    const uint32_t expected_port[8] = {
+        0x00000040u, 0xD0010001u, 0xD0020002u, 0xD0030003u,
+        0xD0040004u, 0x00000000u, 0x00000000u, 0x00000000u
+    };
+    r.vrom_port = texture_port_called &&
+        naomi_model3_vrom_last_status() == NAOMI_CART_VROM_OK &&
+        texture_port_fifo.size() == 8u &&
+        std::memcmp(texture_port_fifo.data(), expected_port, sizeof(expected_port)) == 0;
+
     if (r.vrom && board.poly_ram.size() == 0x400000u / 4u) {
         video::SceneBuilder builder;
         const bool first = builder.naomi_test_vrom_model(
@@ -428,7 +444,8 @@ static Results run_integration()
 }
 
 #define FONT_W 12
-#define FONT_H 24
+#define FONT_H 18
+#define FONT_SOURCE_H 24
 static pvr_ptr_t font_texture;
 
 static void font_init()
@@ -449,7 +466,7 @@ static void draw_char(float x, float y, unsigned char c)
     pvr_vertex_t v;
     const int ix = (c % 16) * 16, iy = (c / 16) * 24;
     const float u1 = ix / 256.0f, v1 = iy / 256.0f;
-    const float u2 = (ix + FONT_W) / 256.0f, v2 = (iy + FONT_H) / 256.0f;
+    const float u2 = (ix + FONT_W) / 256.0f, v2 = (iy + FONT_SOURCE_H) / 256.0f;
     v.flags = PVR_CMD_VERTEX;
     v.x = x; v.y = y + FONT_H; v.z = 1.0f; v.u = u1; v.v = v2;
     v.argb = PVR_PACK_COLOR(1, 1, 1, 1); v.oargb = 0;
@@ -487,14 +504,15 @@ static void draw_screen(const Results &r)
     draw_text(40, 176, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
     draw_text(40, 196, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
     draw_text(40, 216, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
-    draw_text(40, 226, r.vrom_edges ? "VROM PAGE/MIRROR/WRAP: PASS" : "VROM PAGE/MIRROR/WRAP: FAIL");
-    draw_text(40, 236, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
-    draw_text(40, 256, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
-    draw_text(40, 276, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
-    draw_text(40, 296, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
-    draw_text(40, 316, r.texture16 ? "REAL3D TEXTURE 16-BIT: PASS" : "REAL3D TEXTURE 16-BIT: FAIL");
-    draw_text(40, 336, r.texture8_low ? "REAL3D TEXTURE 8-BIT LOW: PASS" : "REAL3D TEXTURE 8-BIT LOW: FAIL");
-    draw_text(40, 356, r.texture8_high ? "REAL3D TEXTURE 8-BIT HIGH: PASS" : "REAL3D TEXTURE 8-BIT HIGH: FAIL");
+    draw_text(40, 236, r.vrom_edges ? "VROM PAGE/MIRROR/WRAP: PASS" : "VROM PAGE/MIRROR/WRAP: FAIL");
+    draw_text(40, 256, r.vrom_port ? "VROM TEXTURE PORT: PASS" : "VROM TEXTURE PORT: FAIL");
+    draw_text(40, 276, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
+    draw_text(40, 296, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
+    draw_text(40, 316, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
+    draw_text(40, 336, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
+    draw_text(40, 356, r.texture16 ? "REAL3D TEXTURE 16-BIT: PASS" : "REAL3D TEXTURE 16-BIT: FAIL");
+    draw_text(40, 376, r.texture8_low ? "REAL3D TEXTURE 8-BIT LOW: PASS" : "REAL3D TEXTURE 8-BIT LOW: FAIL");
+    draw_text(40, 396, r.texture8_high ? "REAL3D TEXTURE 8-BIT HIGH: PASS" : "REAL3D TEXTURE 8-BIT HIGH: FAIL");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d MESH:%u VERT:%u CACHE:%u",
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.meshes),
