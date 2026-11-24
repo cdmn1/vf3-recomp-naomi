@@ -324,9 +324,11 @@ jobs:
           unzip -t "$RUNNER_TEMP/vf3-roms.zip" >/dev/null
           ROM="naomi_model3_vrom_integration-v${GITHUB_RUN_NUMBER}.bin"
           OUTPUT="vf3_naomi_rev_d-v${GITHUB_RUN_NUMBER}.bin"
+          PAYLOAD_OFFSET="$(python3 -c 'import os; n=os.path.getsize("build-artifacts/$ROM"); print((n + 31) & ~31)')"
+          echo "VF3 ROM payload offset: $PAYLOAD_OFFSET"
           python3 tools/naomi/pack_vf3_roms.py \
             "build-artifacts/$ROM" "$RUNNER_TEMP/vf3-roms.zip" \
-            "build-artifacts/$OUTPUT"
+            "build-artifacts/$OUTPUT" --payload-offset "$PAYLOAD_OFFSET"
           SIZE="$(stat -c '%s' "build-artifacts/$OUTPUT")"
           SHA="$(sha256sum "build-artifacts/$OUTPUT" | awk '{print $1}')"
           cat > "build-artifacts/$OUTPUT.INFO.txt" <<EOF
