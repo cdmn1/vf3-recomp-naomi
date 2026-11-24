@@ -159,6 +159,15 @@ static Results run_integration()
         *reinterpret_cast<uint32_t *>(board.ram.data() + 0x104) = cull_source_word;
         *reinterpret_cast<uint32_t *>(board.ram.data() + 0x108) = poly_source_word;
         *reinterpret_cast<uint32_t *>(board.ram.data() + 0x10C) = cull_hi_source_word;
+
+        // A single 32x32 16-bit texture record: length, header, then 512 data words.
+        // The source words are pre-swapped because the Real3D DMA write path swaps
+        // each PPC bus word before appending it to the texture FIFO.
+        uint32_t *texture_record = reinterpret_cast<uint32_t *>(board.ram.data() + 0x200);
+        texture_record[0] = 0xFC0F0000u; // bswap(4092): 2046 16-bit units after the two-word prefix
+        texture_record[1] = 0x00008001u; // bswap(0x01800000): 32x32, 16-bit, no mipmaps
+        for (unsigned i = 0; i < 512; ++i)
+            texture_record[i + 2] = 0x34123412u; // bswap(0x12341234): 0x1234 texels
         program[0] = 0x3DE08400u; // lis r15, 0x8400 (Real3D register window)
         program[1] = 0x820F0000u; // lwz r16, 0(r15)
         program[2] = 0x3E20C200u; // lis r17, 0xC200 (Real3D DMA registers)
@@ -191,10 +200,22 @@ static Results run_integration()
         program[29] = 0x8B11000Cu; // lbz r24, 12(r17) (read DMA completion status)
         program[30] = 0x3B200001u; // li r25, 1 (DMA status acknowledge)
         program[31] = 0x9B31000Du; // stb r25, 13(r17) (clear status and completion IRQ)
+        // DMA the synthetic texture record into the FIFO, acknowledge its completion,
+        // then issue the Real3D flush register to decode it into texture RAM.
+        program[32] = 0x3E400002u; // lis r18, 2 (bswap(0x200), texture-record source)
+        program[33] = 0x92510000u; // stw r18, 0(r17)
+        program[34] = 0x3A600094u; // addi r19, r0, 0x0094 (texture FIFO)
+        program[35] = 0x92710004u; // stw r19, 4(r17)
+        program[36] = 0x3E800202u; // lis r20, 0x0202 (bswap(514), transfer 514 words)
+        program[37] = 0x92910008u; // stw r20, 8(r17) (start texture FIFO DMA)
+        program[38] = 0x8B11000Cu; // lbz r24, 12(r17) (read DMA completion status)
+        program[39] = 0x9B31000Du; // stb r25, 13(r17) (acknowledge completion IRQ)
+        program[40] = 0x3F408800u; // lis r26, 0x8800 (Real3D flush register)
+        program[41] = 0x937A0000u; // stw r27, 0(r26) (flush texture FIFO)
         board.cpu.s.pc = 0;
         board.cpu.s.npc = 0;
-        const int real3d_executed = board.cpu.execute(32);
-        r.real3d_bus = real3d_executed == 32 &&
+        const int real3d_executed = board.cpu.execute(42);
+        r.real3d_bus = real3d_executed == 42 &&
                        board.cpu.s.r[16] == 0xFFFFFFFDu &&
                        board.cpu.s.r[22] == dma_source_word &&
                        board.cpu.s.r[24] == 1u &&
@@ -203,6 +224,10 @@ static Results run_integration()
                        board.poly_ram[0] == 0x88776655u &&
                        board.dma_status == 0 &&
                        (board.irq.state & 0x100u) == 0 &&
+                       board.tex_fifo.empty() &&
+                       board.tex_ram[0] == 0x1234u &&
+                       board.tex_ram[31] == 0x1234u &&
+                       board.tex_ram[31u * 2048u + 31u] == 0x1234u &&
                        !board.cpu.s.fatal;
     }
 
