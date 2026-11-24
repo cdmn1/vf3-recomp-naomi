@@ -157,6 +157,7 @@ jobs:
         run: |
           set -eo pipefail
           python3 -m unittest tools/naomi/test_make_vrom_integration_image.py
+          python3 -m unittest tools/naomi/test_pack_vf3_roms.py
 
       - name: Archive compiled Naomi KOS tree
         if: steps.kos-cache.outputs.cache-hit != 'true'
@@ -219,7 +220,7 @@ jobs:
           export KOS_SUBARCH=naomi
           . "$KOS_BASE/environ.sh"
           export KOS_INC_PATHS_CPP=""
-          make -C tests/ppc_interpreter_smoke model3-integration
+          BUILD_VERSION="v${GITHUB_RUN_NUMBER}" make -C tests/ppc_interpreter_smoke model3-integration
           test -s tests/ppc_interpreter_smoke/naomi_model3_vrom_integration.elf
 
       - name: Compile Naomi cartridge PIO read probe
@@ -325,12 +326,10 @@ jobs:
           unzip -t "$RUNNER_TEMP/vf3-roms.zip" >/dev/null
           ROM="naomi_model3_vrom_integration-v${GITHUB_RUN_NUMBER}.bin"
           OUTPUT="vf3_naomi_rev_d-v${GITHUB_RUN_NUMBER}.bin"
-          ROM_SIZE="$(stat -c '%s' "build-artifacts/$ROM")"
-          PAYLOAD_OFFSET="$(( (ROM_SIZE + 31) & ~31 ))"
-          echo "VF3 ROM payload offset: $PAYLOAD_OFFSET"
+          echo "VF3 ROM payload offset: 16777216 (replace synthetic payload in place)"
           python3 tools/naomi/pack_vf3_roms.py \
             "build-artifacts/$ROM" "$RUNNER_TEMP/vf3-roms.zip" \
-            "build-artifacts/$OUTPUT" --payload-offset "$PAYLOAD_OFFSET"
+            "build-artifacts/$OUTPUT"
           SIZE="$(stat -c '%s' "build-artifacts/$OUTPUT")"
           SHA="$(sha256sum "build-artifacts/$OUTPUT" | awk '{print $1}')"
           cat > "build-artifacts/$OUTPUT.INFO.txt" <<EOF
@@ -341,6 +340,7 @@ jobs:
           ROM: ${OUTPUT}
           Size: ${SIZE}
           SHA-256: ${SHA}
+          Payload offset: 0x01000000 (synthetic payload replaced in place)
           Source ROM ZIP: user-supplied Dropbox file (not included in artifact)
           ROM validation: 39 expected ROMs, CRC32 and exact size checked by packer
           Commercial game data: not included in repository
