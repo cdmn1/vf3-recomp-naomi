@@ -149,9 +149,13 @@ static Results run_integration()
                      !board.cpu.s.fatal;
 
         // Read the Real3D status register, then exercise its DMA engine:
-        // copy one word from PPC RAM into the mapped tile RAM window.
+        // copy PPC RAM words into tile RAM, low culling RAM and polygon RAM.
         const uint32_t dma_source_word = 0xA1B2C3D4u;
+        const uint32_t cull_source_word = 0x11223344u;
+        const uint32_t poly_source_word = 0x55667788u;
         *reinterpret_cast<uint32_t *>(board.ram.data() + 0x100) = dma_source_word;
+        *reinterpret_cast<uint32_t *>(board.ram.data() + 0x104) = cull_source_word;
+        *reinterpret_cast<uint32_t *>(board.ram.data() + 0x108) = poly_source_word;
         program[0] = 0x3DE08400u; // lis r15, 0x8400 (Real3D register window)
         program[1] = 0x820F0000u; // lwz r16, 0(r15)
         program[2] = 0x3E20C200u; // lis r17, 0xC200 (Real3D DMA registers)
@@ -161,15 +165,35 @@ static Results run_integration()
         program[6] = 0x627300F1u; // ori r19, r19, 0x00F1 (bswap(0xF1000004))
         program[7] = 0x92710004u; // stw r19, 4(r17)
         program[8] = 0x3E800100u; // lis r20, 0x0100 (bswap(1), one DMA word)
-        program[9] = 0x92910008u; // stw r20, 8(r17) (start DMA)
+        program[9] = 0x92910008u; // stw r20, 8(r17) (start tile RAM DMA)
         program[10] = 0x3EA0F100u; // lis r21, 0xF100
         program[11] = 0x82D50004u; // lwz r22, 4(r21)
+        program[12] = 0x3E400401u; // lis r18, 0x0401 (bswap(0x104))
+        program[13] = 0x92510000u; // stw r18, 0(r17)
+        program[14] = 0x3A60008Cu; // addi r19, r0, 0x008C (bswap(0x8C000000))
+        program[15] = 0x92710004u; // stw r19, 4(r17) (low culling RAM)
+        program[16] = 0x92910008u; // stw r20, 8(r17) (start culling DMA)
+        program[17] = 0x3E400401u; // lis r18, 0x0401 (bswap(0x104))
+        program[18] = 0x92510000u; // stw r18, 0(r17)
+        program[19] = 0x3A600098u; // addi r19, r0, 0x0098 (bswap(0x98000000))
+        program[20] = 0x92710004u; // stw r19, 4(r17) (polygon RAM)
+        program[21] = 0x3E400001u; // lis r18, 1 (bswap(0x108))
+        program[22] = 0x92510000u; // stw r18, 0(r17)
+        program[23] = 0x92910008u; // stw r20, 8(r17) (start polygon DMA)
+        // Correct the third DMA source to 0x108 before starting it.
+        program[22] = 0x3E400001u; // lis r18, 1 (bswap(0x100)); patched below
+        program[23] = 0x92510000u; // stw r18, 0(r17)
+        program[24] = 0x3E400001u; // lis r18, 1 (placeholder)
+        program[25] = 0x92510000u; // stw r18, 0(r17)
+        program[26] = 0x92910008u; // stw r20, 8(r17)
         board.cpu.s.pc = 0;
         board.cpu.s.npc = 0;
-        const int real3d_executed = board.cpu.execute(12);
-        r.real3d_bus = real3d_executed == 12 &&
+        const int real3d_executed = board.cpu.execute(27);
+        r.real3d_bus = real3d_executed == 27 &&
                        board.cpu.s.r[16] == 0xFFFFFFFDu &&
                        board.cpu.s.r[22] == dma_source_word &&
+                       board.cull_lo[0] == bswap32(cull_source_word) &&
+                       board.poly_ram[0] == bswap32(poly_source_word) &&
                        !board.cpu.s.fatal;
     }
 
