@@ -750,9 +750,9 @@ static void draw_screen(const Results &r)
         (r.scene ? "SCENEBUILDER GEOMETRY/ATTR/CACHE: PASS" : "SCENEBUILDER GEOMETRY/ATTR/CACHE: FAIL") :
         "SCENEBUILDER SYNTHETIC MODEL: N/A");
     draw_text(40, 316, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
-    draw_text(40, 334, r.texture16 ? "REAL3D TEXTURE 16-BIT: PASS" : "REAL3D TEXTURE 16-BIT: FAIL");
-    draw_text(40, 352, r.texture8_low ? "REAL3D TEXTURE 8-BIT LOW: PASS" : "REAL3D TEXTURE 8-BIT LOW: FAIL");
-    draw_text(40, 370, r.texture8_high ? "REAL3D TEXTURE 8-BIT HIGH: PASS" : "REAL3D TEXTURE 8-BIT HIGH: FAIL");
+    draw_text(40, 334, r.texture16 ? "SYNTHETIC REAL3D TEX 16-BIT: PASS" : "SYNTHETIC REAL3D TEX 16-BIT: FAIL");
+    draw_text(40, 352, r.texture8_low ? "SYNTHETIC REAL3D TEX 8-LOW: PASS" : "SYNTHETIC REAL3D TEX 8-LOW: FAIL");
+    draw_text(40, 370, r.texture8_high ? "SYNTHETIC REAL3D TEX 8-HIGH: PASS" : "SYNTHETIC REAL3D TEX 8-HIGH: FAIL");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d NZ:%u MESH:%u VERT:%u",
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.real_vrom_nonzero),
