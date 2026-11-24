@@ -309,7 +309,7 @@ jobs:
           EOF
 
       - name: Download, verify and package user-supplied VF3 Revision D ROMs
-        if: github.event_name == 'workflow_dispatch' && inputs.pack_real_vf3
+        if: (github.event_name == 'workflow_dispatch' && inputs.pack_real_vf3) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[pack-real-vf3]'))
         env:
           VF3_ROM_ZIP_URL: ${{ secrets.VF3_ROM_ZIP_URL }}
         run: |
@@ -427,7 +427,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload real VF3 Revision D NetDIMM image
-        if: github.event_name == 'workflow_dispatch' && inputs.pack_real_vf3
+        if: (github.event_name == 'workflow_dispatch' && inputs.pack_real_vf3) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[pack-real-vf3]'))
         uses: actions/upload-artifact@v4
         with:
           name: vf3-naomi-rev-d-v${{ github.run_number }}
