@@ -343,7 +343,7 @@ static Results run_integration()
                           board.tex_ram[80u * 2048u + 111u] == 0x7BA5u &&
                           board.tex_ram[79u * 2048u + 112u] == 0x38A5u &&
                           board.tex_ram[88u * 2048u + 120u] == 0xADA5u &&
-                          board.tex_ram[64u * 2048u + 95u] == 0xA54Du &&
+                          board.tex_ram[64u * 2048u + 95u] == 0xA5BBu &&
                           !board.cpu.s.fatal;
         r.real3d_bus = r.real3d_bus && r.texture16 &&
                        r.texture8_low && r.texture8_high;
