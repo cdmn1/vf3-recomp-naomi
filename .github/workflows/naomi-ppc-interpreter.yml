@@ -11,6 +11,8 @@ on:
       - "tools/naomi/test_cart_rom.c"
       - "tools/naomi/test_cart_vrom.c"
       - "tools/naomi/test_cart_image_format.py"
+      - "tools/naomi/make_vrom_integration_image.py"
+      - "tools/naomi/test_make_vrom_integration_image.py"
       - "VERSION"
       - ".github/workflows/naomi-ppc-interpreter.yml"
   workflow_dispatch:
