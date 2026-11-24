@@ -22,6 +22,10 @@ BANKED_SIZE = 0x04000000
 VROM_SIZE = 0x02000000
 MODEL_WORD_ADDRESS = 0x00100000
 MODEL_BYTE_OFFSET = MODEL_WORD_ADDRESS * 4
+VROM_EDGE_WORD_ADDRESS = 0x00003FFC
+VROM_EDGE_WORDS = (0xE0010001, 0xE0020002, 0xE0030003, 0xE0040004,
+                   0xE0050005, 0xE0060006, 0xE0070007, 0xE0080008)
+VROM_EDGE_BYTES = struct.pack("<8I", *VROM_EDGE_WORDS)
 FIXED_BUS_MARKER = 0x13579BDF
 BANKED_BUS_MARKER = 0x2468ACE0
 BANKED_BUS_MARKER_BANK = 3
@@ -70,15 +74,19 @@ def crc_marker_region(size: int, marker: int, marker_offset: int = 0) -> int:
 
 def crc_vrom_region() -> int:
     crc = 0
-    patch_start = MODEL_BYTE_OFFSET
-    patch_end = patch_start + len(MODEL_BYTES)
+    patches = (
+        (MODEL_BYTE_OFFSET, MODEL_BYTES),
+        (VROM_EDGE_WORD_ADDRESS * 4, VROM_EDGE_BYTES),
+    )
     for offset in range(0, VROM_SIZE, CHUNK):
         length = min(CHUNK, VROM_SIZE - offset)
         block = bytearray(length)
-        start = max(offset, patch_start)
-        end = min(offset + length, patch_end)
-        if start < end:
-            block[start - offset:end - offset] = MODEL_BYTES[start - patch_start:end - patch_start]
+        for patch_start, patch_data in patches:
+            patch_end = patch_start + len(patch_data)
+            start = max(offset, patch_start)
+            end = min(offset + length, patch_end)
+            if start < end:
+                block[start - offset:end - offset] = patch_data[start - patch_start:end - patch_start]
         crc = zlib.crc32(block, crc)
     return crc & 0xFFFFFFFF
 
@@ -135,6 +143,8 @@ def build(executable: Path, output: Path) -> dict:
         target.write(struct.pack("<I", BANKED_BUS_MARKER))
         target.seek(vrom_offset + MODEL_BYTE_OFFSET)
         target.write(MODEL_BYTES)
+        target.seek(vrom_offset + VROM_EDGE_WORD_ADDRESS * 4)
+        target.write(VROM_EDGE_BYTES)
 
     manifest = {
         "format": "VF3NROM", "version": 1,
@@ -143,6 +153,8 @@ def build(executable: Path, output: Path) -> dict:
         "payload_offset": PAYLOAD_OFFSET, "payload_size": payload_size,
         "image_size": image_end, "model_word_address": MODEL_WORD_ADDRESS,
         "model_words": len(MODEL_WORDS),
+        "vrom_edge_word_address": VROM_EDGE_WORD_ADDRESS,
+        "vrom_edge_words": list(VROM_EDGE_WORDS),
         "fixed_bus_marker": FIXED_BUS_MARKER,
         "banked_bus_marker": BANKED_BUS_MARKER,
         "banked_bus_marker_bank": BANKED_BUS_MARKER_BANK,
