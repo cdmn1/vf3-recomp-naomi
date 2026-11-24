@@ -6,7 +6,8 @@ import unittest
 import zlib
 
 # The real-image packer must overwrite the runtime payload slot, not append a second image.
-# Marker commit: exercise real-ROM packaging in CI after validating the in-place overlay.\nMODULE_PATH = Path(__file__).with_name("pack_vf3_roms.py")
+# Marker commit: exercise real-ROM packaging in CI after validating the in-place overlay.
+MODULE_PATH = Path(__file__).with_name("pack_vf3_roms.py")
 SPEC = importlib.util.spec_from_file_location("pack_vf3_roms", MODULE_PATH)
 PACKER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PACKER)
