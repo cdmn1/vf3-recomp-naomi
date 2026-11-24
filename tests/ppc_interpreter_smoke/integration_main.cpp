@@ -808,6 +808,9 @@ struct PvrRenderStats {
     uint32_t triangles_submitted = 0;
     uint32_t triangles_rejected = 0;
     uint32_t vertices_submitted = 0;
+    float min_x = 1.0e9f, min_y = 1.0e9f;
+    float max_x = -1.0e9f, max_y = -1.0e9f;
+    uint32_t vertices_offscreen = 0;
 };
 
 static PvrRenderStats draw_scene_builder_output(const Results &r)
@@ -869,6 +872,13 @@ static PvrRenderStats draw_scene_builder_output(const Results &r)
                             source.colour[1] / 255.0f,
                             source.colour[2] / 255.0f);
                         vertex.oargb = 0;
+                        stats.min_x = std::min(stats.min_x, vertex.x);
+                        stats.min_y = std::min(stats.min_y, vertex.y);
+                        stats.max_x = std::max(stats.max_x, vertex.x);
+                        stats.max_y = std::max(stats.max_y, vertex.y);
+                        if (vertex.x < 0.0f || vertex.x >= 640.0f ||
+                            vertex.y < 0.0f || vertex.y >= 480.0f)
+                            ++stats.vertices_offscreen;
                     }
                     if (!valid) {
                         ++stats.triangles_rejected;
@@ -977,17 +987,20 @@ static void draw_screen(const Results &r)
             static_cast<unsigned>(r.real_boot_frames), r.real_boot_pc);
     }
     draw_text(40, 426, line);
-    draw_text(40, 444, r.synthetic_fixture ?
-        (r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL") :
-        (r.real_scene ? "REAL VF3 SCENE EXTRACT: PASS" : "REAL VF3 SCENE EXTRACT: WAIT"));
+    if (r.synthetic_fixture)
+        draw_text(40, 444, r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL");
+    else {
+        snprintf(line, sizeof(line), "SCENE:%s TRI:%u",
+            r.real_scene ? "PASS" : "WAIT",
+            static_cast<unsigned>(pvr_stats.triangles_submitted));
+        draw_text(40, 444, line);
+    }
     if (r.synthetic_fixture)
         draw_text(40, 462, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
     else {
-        snprintf(line, sizeof(line), "COPY:%s PVR TRI:%u V:%u SKIP:%u",
-            r.real_program_copied ? "PASS" : "WAIT",
-            static_cast<unsigned>(pvr_stats.triangles_submitted),
-            static_cast<unsigned>(pvr_stats.vertices_submitted),
-            static_cast<unsigned>(pvr_stats.triangles_rejected));
+        snprintf(line, sizeof(line), "PVR XY:%.0f,%.0f-%.0f,%.0f OUT:%u",
+            pvr_stats.min_x, pvr_stats.min_y, pvr_stats.max_x, pvr_stats.max_y,
+            static_cast<unsigned>(pvr_stats.vertices_offscreen));
         draw_text(40, 462, line);
     }
     pvr_list_finish();
