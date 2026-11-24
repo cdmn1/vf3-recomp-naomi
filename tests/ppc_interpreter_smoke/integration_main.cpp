@@ -643,8 +643,8 @@ static void draw_scene_builder_output(const Results &r)
                         vertex.y = viewport.vp_y + viewport.vp_h *
                             (viewport.top - vy / depth) / (viewport.top - viewport.bottom);
                         vertex.z = 1.0f;
-                        vertex.u = textured ? source.uv[0] / float(mesh.width) : 0.0f;
-                        vertex.v = textured ? source.uv[1] / float(mesh.height) : 0.0f;
+                        vertex.u = textured ? source.uv[0] : 0.0f;
+                        vertex.v = textured ? source.uv[1] : 0.0f;
                         vertex.argb = PVR_PACK_COLOR(
                             model.alpha * source.colour[3] / 255.0f,
                             source.colour[0] / 255.0f,
