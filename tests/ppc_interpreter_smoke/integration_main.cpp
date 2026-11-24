@@ -149,43 +149,60 @@ static Results run_integration()
                      !board.cpu.s.fatal;
 
         // Read the Real3D status register, then exercise its DMA engine:
-        // copy PPC RAM words into tile RAM, low culling RAM and polygon RAM.
+        // copy PPC RAM words into tile RAM, low/high culling RAM and polygon RAM.
+        // Enable completion IRQ/status reporting and acknowledge it after the transfers.
         const uint32_t dma_source_word = 0xA1B2C3D4u;
         const uint32_t cull_source_word = 0x11223344u;
         const uint32_t poly_source_word = 0x55667788u;
+        const uint32_t cull_hi_source_word = 0x99AABBCCu;
         *reinterpret_cast<uint32_t *>(board.ram.data() + 0x100) = dma_source_word;
         *reinterpret_cast<uint32_t *>(board.ram.data() + 0x104) = cull_source_word;
         *reinterpret_cast<uint32_t *>(board.ram.data() + 0x108) = poly_source_word;
+        *reinterpret_cast<uint32_t *>(board.ram.data() + 0x10C) = cull_hi_source_word;
         program[0] = 0x3DE08400u; // lis r15, 0x8400 (Real3D register window)
         program[1] = 0x820F0000u; // lwz r16, 0(r15)
         program[2] = 0x3E20C200u; // lis r17, 0xC200 (Real3D DMA registers)
-        program[3] = 0x3E400001u; // lis r18, 1 (bswap(0x100), DMA source)
-        program[4] = 0x92510000u; // stw r18, 0(r17)
-        program[5] = 0x3E600400u; // lis r19, 0x0400
-        program[6] = 0x627300F1u; // ori r19, r19, 0x00F1 (bswap(0xF1000004))
-        program[7] = 0x92710004u; // stw r19, 4(r17)
-        program[8] = 0x3E800100u; // lis r20, 0x0100 (bswap(1), one DMA word)
-        program[9] = 0x92910008u; // stw r20, 8(r17) (start tile RAM DMA)
-        program[10] = 0x3EA0F100u; // lis r21, 0xF100
-        program[11] = 0x82D50004u; // lwz r22, 4(r21)
-        program[12] = 0x3E400401u; // lis r18, 0x0401 (bswap(0x104), culling source)
-        program[13] = 0x92510000u; // stw r18, 0(r17)
-        program[14] = 0x3A60008Cu; // addi r19, r0, 0x008C (bswap(0x8C000000))
-        program[15] = 0x92710004u; // stw r19, 4(r17) (low culling RAM)
-        program[16] = 0x92910008u; // stw r20, 8(r17) (start culling DMA)
-        program[17] = 0x3E400801u; // lis r18, 0x0801 (bswap(0x108), polygon source)
-        program[18] = 0x92510000u; // stw r18, 0(r17)
-        program[19] = 0x3A600098u; // addi r19, r0, 0x0098 (bswap(0x98000000))
-        program[20] = 0x92710004u; // stw r19, 4(r17) (polygon RAM)
-        program[21] = 0x92910008u; // stw r20, 8(r17) (start polygon DMA)
+        program[3] = 0x3AE00001u; // li r23, 1 (enable DMA completion status/IRQ)
+        program[4] = 0x9AF1000Eu; // stb r23, 14(r17) (DMA config)
+        program[5] = 0x3E400001u; // lis r18, 1 (bswap(0x100), DMA source)
+        program[6] = 0x92510000u; // stw r18, 0(r17)
+        program[7] = 0x3E600400u; // lis r19, 0x0400
+        program[8] = 0x627300F1u; // ori r19, r19, 0x00F1 (bswap(0xF1000004))
+        program[9] = 0x92710004u; // stw r19, 4(r17)
+        program[10] = 0x3E800100u; // lis r20, 0x0100 (bswap(1), one DMA word)
+        program[11] = 0x92910008u; // stw r20, 8(r17) (start tile RAM DMA)
+        program[12] = 0x3EA0F100u; // lis r21, 0xF100
+        program[13] = 0x82D50004u; // lwz r22, 4(r21)
+        program[14] = 0x3E400401u; // lis r18, 0x0401 (bswap(0x104), low culling source)
+        program[15] = 0x92510000u; // stw r18, 0(r17)
+        program[16] = 0x3A60008Cu; // addi r19, r0, 0x008C (bswap(0x8C000000))
+        program[17] = 0x92710004u; // stw r19, 4(r17) (low culling RAM)
+        program[18] = 0x92910008u; // stw r20, 8(r17) (start low culling DMA)
+        program[19] = 0x3E400801u; // lis r18, 0x0801 (bswap(0x108), polygon source)
+        program[20] = 0x92510000u; // stw r18, 0(r17)
+        program[21] = 0x3A600098u; // addi r19, r0, 0x0098 (bswap(0x98000000))
+        program[22] = 0x92710004u; // stw r19, 4(r17) (polygon RAM)
+        program[23] = 0x92910008u; // stw r20, 8(r17) (start polygon DMA)
+        program[24] = 0x3E400C01u; // lis r18, 0x0C01 (bswap(0x10C), high culling source)
+        program[25] = 0x92510000u; // stw r18, 0(r17)
+        program[26] = 0x3A60008Eu; // addi r19, r0, 0x008E (bswap(0x8E000000))
+        program[27] = 0x92710004u; // stw r19, 4(r17) (high culling RAM)
+        program[28] = 0x92910008u; // stw r20, 8(r17) (start high culling DMA)
+        program[29] = 0x8B11000Cu; // lbz r24, 12(r17) (read DMA completion status)
+        program[30] = 0x3B200001u; // li r25, 1 (DMA status acknowledge)
+        program[31] = 0x9B31000Du; // stb r25, 13(r17) (clear status and completion IRQ)
         board.cpu.s.pc = 0;
         board.cpu.s.npc = 0;
-        const int real3d_executed = board.cpu.execute(22);
-        r.real3d_bus = real3d_executed == 22 &&
+        const int real3d_executed = board.cpu.execute(32);
+        r.real3d_bus = real3d_executed == 32 &&
                        board.cpu.s.r[16] == 0xFFFFFFFDu &&
                        board.cpu.s.r[22] == dma_source_word &&
+                       board.cpu.s.r[24] == 1u &&
                        board.cull_lo[0] == 0x44332211u &&
+                       board.cull_hi[0] == 0xCCBBAA99u &&
                        board.poly_ram[0] == 0x88776655u &&
+                       board.dma_status == 0 &&
+                       (board.irq.state & 0x100u) == 0 &&
                        !board.cpu.s.fatal;
     }
 
