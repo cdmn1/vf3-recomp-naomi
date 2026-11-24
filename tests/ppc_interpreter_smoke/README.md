@@ -46,3 +46,17 @@ CROM reads through the NetDIMM bridge, mapped Real3D tile RAM access, PPC-progra
 NetDIMM/SceneBuilder integration. It
 does not execute the VF3 PowerPC program or validate the Naomi PowerVR2 game
 renderer.
+
+
+### Real3D texture FIFO decode coverage
+
+The integration ROM also DMA-writes one synthetic 32x32 16-bit texture record
+through the PPC Real3D DMA registers into the texture FIFO, acknowledges DMA
+completion, and issues the texture flush register. Unlike a uniform-colour
+upload, every source texel has a distinct value. The record targets X=32,
+Y=32 on texture page 1 (the second 1024-row page). The checks cover the
+upstream 8x8 tiled texel permutation, adjacent texels, horizontal and vertical
+tile boundaries, the final texel, and untouched page-0/origin locations.
+The FIFO must be empty after flush. This exercises the pinned upstream texture
+record parser and decoder with synthetic data; it does not demonstrate VF3's
+real texture formats in-game or PVR2 game rendering.
