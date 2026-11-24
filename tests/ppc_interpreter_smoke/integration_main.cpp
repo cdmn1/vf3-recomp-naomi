@@ -808,6 +808,7 @@ static void draw_screen(const Results &r)
     pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
     char title[64];
+    char line[64];
     snprintf(title, sizeof(title), "VF3 NAOMI - MODEL3 INTEGRATION %s", VF3_BUILD_VERSION);
     draw_text(40, 48, title);
     draw_text(40, 72, r.synthetic_fixture ?
@@ -861,7 +862,6 @@ static void draw_screen(const Results &r)
     draw_text(40, 354, r.synthetic_fixture ?
         (r.texture8_high ? "SYNTHETIC REAL3D TEX 8-HIGH: PASS" : "SYNTHETIC REAL3D TEX 8-HIGH: FAIL") :
         "SYNTHETIC REAL3D TEX 8-HIGH: N/A");
-    char line[64];
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d NZ:%u MESH:%u VERT:%u",
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.real_vrom_nonzero),
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices));
