@@ -160,7 +160,7 @@ static uint16_t decode_real3d_texel(uint16_t value, int format)
     return static_cast<uint16_t>((a << 12) | (r << 8) | (g << 4) | b);
 }
 
-static alignas(32) uint16_t real3d_texture_upload[256 * 256];
+alignas(32) static uint16_t real3d_texture_upload[128 * 128];
 
 static void prepare_real3d_textures(Results &r, const m3::Model3 &board)
 {
@@ -169,8 +169,8 @@ static void prepare_real3d_textures(Results &r, const m3::Model3 &board)
             if (!model.meshes) continue;
             for (const video::Mesh &mesh : *model.meshes) {
                 if (!mesh.textured || mesh.width <= 0 || mesh.height <= 0) continue;
-                const int out_w = std::min(mesh.width, 256);
-                const int out_h = std::min(mesh.height, 256);
+                const int out_w = std::min(mesh.width, 128);
+                const int out_h = std::min(mesh.height, 128);
                 const int page = (mesh.page ^ model.page) & 1;
                 pvr_ptr_t texture = pvr_mem_malloc(out_w * out_h * 2);
                 if (!texture) { ++r.render_textures_failed; continue; }
@@ -1080,7 +1080,7 @@ static void draw_screen(const Results &r)
     if (r.synthetic_fixture)
         draw_text(40, 462, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
     else {
-        snprintf(line, sizeof(line), "PVR XY:%.0f,%.0f-%.0f,%.0f OUT:%u TEX:%u/%u",
+        snprintf(line, sizeof(line), "XY:%.0f,%.0f-%.0f,%.0f OUT:%u TEX:%u/%u",
             pvr_stats.min_x, pvr_stats.min_y, pvr_stats.max_x, pvr_stats.max_y,
             static_cast<unsigned>(pvr_stats.vertices_offscreen),
             static_cast<unsigned>(r.render_textures_ready),
