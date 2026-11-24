@@ -161,13 +161,19 @@ static Results run_integration()
         *reinterpret_cast<uint32_t *>(board.ram.data() + 0x10C) = cull_hi_source_word;
 
         // A single 32x32 16-bit texture record: length, header, then 512 data words.
-        // The source words are pre-swapped because the Real3D DMA write path swaps
-        // each PPC bus word before appending it to the texture FIFO.
+        // Use a distinct value for every source texel so the test observes the
+        // upstream 8x8 tile-order decoder instead of passing on a solid fill.
+        // Place it at (32, 1056): non-zero X/Y plus texture page 1 (Y + 1024).
+        // The DMA/Real3D bus byte swaps are accounted for when packing each word.
         uint32_t *texture_record = reinterpret_cast<uint32_t *>(board.ram.data() + 0x200);
+        uint16_t texture_pattern[1024];
+        for (unsigned i = 0; i < 1024; ++i)
+            texture_pattern[i] = static_cast<uint16_t>(0x1000u + i);
         texture_record[0] = 0xFC0F0000u; // bswap(4092): 2046 16-bit units after the two-word prefix
-        texture_record[1] = 0x00008001u; // bswap(0x01800000): 32x32, 16-bit, no mipmaps
+        texture_record[1] = 0x81009001u; // bswap(0x01900081): X=32, Y=32, page 1, 32x32, no mipmaps
         for (unsigned i = 0; i < 512; ++i)
-            texture_record[i + 2] = 0x34123412u; // bswap(0x12341234): 0x1234 texels
+            texture_record[i + 2] =
+                (uint32_t(texture_pattern[i * 2 + 1]) << 16) | texture_pattern[i * 2];
         program[0] = 0x3DE08400u; // lis r15, 0x8400 (Real3D register window)
         program[1] = 0x820F0000u; // lwz r16, 0(r15)
         program[2] = 0x3E20C200u; // lis r17, 0xC200 (Real3D DMA registers)
@@ -225,9 +231,19 @@ static Results run_integration()
                        board.dma_status == 0 &&
                        (board.irq.state & 0x100u) == 0 &&
                        board.tex_fifo.empty() &&
-                       board.tex_ram[0] == 0x1234u &&
-                       board.tex_ram[31] == 0x1234u &&
-                       board.tex_ram[31u * 2048u + 31u] == 0x1234u &&
+                       // 8x8 tiled input order: decode8x8[0]=1, [1]=0,
+                       // [4]=9, [8]=3, [63]=62. Check adjacent texels,
+                       // tile boundaries, and the final texel of the 32x32 image.
+                       board.tex_ram[1056u * 2048u + 32u] == texture_pattern[1] &&
+                       board.tex_ram[1056u * 2048u + 33u] == texture_pattern[0] &&
+                       board.tex_ram[1056u * 2048u + 36u] == texture_pattern[9] &&
+                       board.tex_ram[1057u * 2048u + 32u] == texture_pattern[3] &&
+                       board.tex_ram[1056u * 2048u + 40u] == texture_pattern[65] &&
+                       board.tex_ram[1064u * 2048u + 32u] == texture_pattern[129] &&
+                       board.tex_ram[1087u * 2048u + 63u] == texture_pattern[1022] &&
+                       // Confirm page 0 and the old origin were not accidentally written.
+                       board.tex_ram[32u * 2048u + 32u] == 0 &&
+                       board.tex_ram[0] == 0 &&
                        !board.cpu.s.fatal;
     }
 
