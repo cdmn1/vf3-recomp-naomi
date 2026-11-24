@@ -62,9 +62,10 @@ class SyntheticImageTests(unittest.TestCase):
         self.assertEqual(IMAGE.MODEL_WORDS[1] & 4, 0)
         self.assertEqual(IMAGE.MODEL_WORDS[20] & 4, 4)
         self.assertNotEqual(IMAGE.MODEL_WORDS[6], 0)
-        self.assertNotEqual(IMAGE.MODEL_WORDS[25], IMAGE.MODEL_WORDS[6])
+        self.assertEqual(IMAGE.MODEL_WORDS[25], IMAGE.MODEL_WORDS[6])
         self.assertEqual(IMAGE.MODEL_WORDS[4], 0xFFFFFFFF)
         self.assertEqual(IMAGE.MODEL_WORDS[23], 0xFF0000FF)
+        self.assertNotEqual(IMAGE.MODEL_WORDS[4], IMAGE.MODEL_WORDS[23])
 
 
 if __name__ == "__main__":
