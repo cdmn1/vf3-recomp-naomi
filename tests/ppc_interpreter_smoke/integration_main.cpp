@@ -191,9 +191,21 @@ static Results run_integration()
         texture8_low[1] = 0x02012001u;  // bswap(0x01200102): type 1, LSB/low byte, X=64 Y=64
         texture8_high[0] = 0xFC070000u;
         texture8_high[1] = 0x02014001u; // bswap(0x01400102): type 1, MSB/high byte, X=96 Y=64
+        // Give every 8-bit source texel a deterministic value. This checks
+        // the 8x8 tile permutation and the alternating source-byte selection,
+        // not merely that a solid fill reaches the destination.
+        uint16_t texture8_pattern[512];
+        for (unsigned i = 0; i < 512; ++i) {
+            const uint16_t hi = static_cast<uint16_t>((i * 13u + 0x40u) & 0xFFu);
+            const uint16_t lo = static_cast<uint16_t>((i * 29u + 0x10u) & 0xFFu);
+            texture8_pattern[i] = static_cast<uint16_t>((hi << 8) | lo);
+        }
         for (unsigned i = 0; i < 256; ++i) {
-            texture8_low[i + 2] = 0x5A5A5A5Au;
-            texture8_high[i + 2] = 0x3C3C3C3Cu;
+            const uint32_t fifo_word =
+                (uint32_t(texture8_pattern[i * 2 + 1]) << 16) |
+                texture8_pattern[i * 2];
+            texture8_low[i + 2] = __builtin_bswap32(fifo_word);
+            texture8_high[i + 2] = __builtin_bswap32(fifo_word);
         }
         for (unsigned y = 0; y < 32; ++y) {
             for (unsigned x = 0; x < 32; ++x) {
@@ -290,8 +302,18 @@ static Results run_integration()
         r.texture8_low = texture8_low_executed == 10 &&
                          board.cpu.s.r[24] == 1u &&
                          board.tex_fifo.empty() &&
-                         board.tex_ram[64u * 2048u + 64u] == 0xA55Au &&
-                         board.tex_ram[95u * 2048u + 95u] == 0xA55Au &&
+                         board.tex_ram[64u * 2048u + 64u] == 0xA54Du &&
+                         board.tex_ram[64u * 2048u + 65u] == 0xA52Du &&
+                         board.tex_ram[65u * 2048u + 64u] == 0xA540u &&
+                         board.tex_ram[71u * 2048u + 71u] == 0xA576u &&
+                         board.tex_ram[64u * 2048u + 72u] == 0xA5EDu &&
+                         board.tex_ram[64u * 2048u + 95u] == 0xA5BBu &&
+                         board.tex_ram[72u * 2048u + 64u] == 0xA5CDu &&
+                         board.tex_ram[95u * 2048u + 95u] == 0xA5D6u &&
+                         board.tex_ram[80u * 2048u + 79u] == 0xA57Bu &&
+                         board.tex_ram[79u * 2048u + 80u] == 0xA538u &&
+                         board.tex_ram[88u * 2048u + 88u] == 0xA5ADu &&
+                         board.tex_ram[64u * 2048u + 96u] == 0x00A5u &&
                          !board.cpu.s.fatal;
 
         // X=3 (96 pixels), Y=2 (64 pixels), MSB/high-byte lane.
@@ -310,8 +332,18 @@ static Results run_integration()
         r.texture8_high = texture8_high_executed == 8 &&
                           board.cpu.s.r[24] == 1u &&
                           board.tex_fifo.empty() &&
-                          board.tex_ram[64u * 2048u + 96u] == 0x3CA5u &&
-                          board.tex_ram[95u * 2048u + 127u] == 0x3CA5u &&
+                          board.tex_ram[64u * 2048u + 96u] == 0x4DA5u &&
+                          board.tex_ram[64u * 2048u + 97u] == 0x2DA5u &&
+                          board.tex_ram[65u * 2048u + 96u] == 0x40A5u &&
+                          board.tex_ram[71u * 2048u + 103u] == 0x76A5u &&
+                          board.tex_ram[64u * 2048u + 104u] == 0xEDA5u &&
+                          board.tex_ram[64u * 2048u + 127u] == 0xBBA5u &&
+                          board.tex_ram[72u * 2048u + 96u] == 0xCDA5u &&
+                          board.tex_ram[95u * 2048u + 127u] == 0xD6A5u &&
+                          board.tex_ram[80u * 2048u + 111u] == 0x7BA5u &&
+                          board.tex_ram[79u * 2048u + 112u] == 0x38A5u &&
+                          board.tex_ram[88u * 2048u + 120u] == 0xADA5u &&
+                          board.tex_ram[64u * 2048u + 95u] == 0xA54Du &&
                           !board.cpu.s.fatal;
         r.real3d_bus = r.real3d_bus && r.texture16 &&
                        r.texture8_low && r.texture8_high;
