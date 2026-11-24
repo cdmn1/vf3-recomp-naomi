@@ -17,6 +17,10 @@
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
+#ifndef VF3_BUILD_VERSION
+#define VF3_BUILD_VERSION "dev"
+#endif
+
 // The storage/board probe does not need the production recompiler entry map.
 // Supply only the VF3 profile fields used by Model3::load() in this test link.
 namespace m3 {
@@ -667,7 +671,7 @@ static void draw_screen(const Results &r)
     draw_scene_builder_output(r);
     pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
-    draw_text(40, 48, "VF3 NAOMI - MODEL3 INTEGRATION");
+    char title[64];\n    snprintf(title, sizeof(title), "VF3 NAOMI - MODEL3 INTEGRATION %s", VF3_BUILD_VERSION);\n    draw_text(40, 48, title);
     draw_text(40, 72, "SYNTHETIC ROM DATA - NO GAME ASSETS");
     draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
     draw_text(40, 136, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
