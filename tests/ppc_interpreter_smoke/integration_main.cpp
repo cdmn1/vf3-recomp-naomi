@@ -104,6 +104,8 @@ struct Results {
     bool real_scene = false;
     uint32_t real_boot_frames = 0;
     uint32_t real_boot_pc = 0;
+    uint32_t real_boot_pc_changes = 0;
+    uint64_t real_boot_cycles = 0;
     size_t real_program_match_words = 0;
     size_t real_scene_viewports = 0;
     size_t real_scene_models = 0;
@@ -442,12 +444,20 @@ static Results run_integration()
         // is expected to copy the Revision D game program (CROM 0x710000,
         // 0xA0000 bytes) into PPC RAM before transferring control to it.
         board.power_on();
-        for (uint32_t frame = 0; frame < 8 && !board.cpu.s.fatal; ++frame) {
+        uint32_t previous_pc = board.cpu.s.pc;
+        // Give the real boot ROM enough emulated time to leave its short reset
+        // sequence, while recording whether execution is actually progressing.
+        for (uint32_t frame = 0; frame < 120 && !board.cpu.s.fatal; ++frame) {
             board.run_frame();
             ++r.real_boot_frames;
+            if (board.cpu.s.pc != previous_pc) {
+                ++r.real_boot_pc_changes;
+                previous_pc = board.cpu.s.pc;
+            }
         }
         r.real_boot_pc = board.cpu.s.pc;
-        r.real_boot = board.cpu.s.total_cycles != 0 &&
+        r.real_boot_cycles = board.cpu.s.total_cycles;
+        r.real_boot = r.real_boot_cycles != 0 &&
             r.real_boot_pc != 0xFFF00100u && !board.cpu.s.fatal;
         r.crom_bus = r.real_boot;
 
@@ -841,17 +851,22 @@ static void draw_screen(const Results &r)
         static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes),
         static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words));
     draw_text(40, 390, line);
-    snprintf(line, sizeof(line), "POLY:%u FIFO:%u TEX:%u",
-        static_cast<unsigned>(r.poly_words), static_cast<unsigned>(r.fifo_capacity),
-        static_cast<unsigned>(r.tex_words));
-    draw_text(40, 408, line);
-    if (r.synthetic_fixture)
+    if (r.synthetic_fixture) {
+        snprintf(line, sizeof(line), "POLY:%u FIFO:%u TEX:%u",
+            static_cast<unsigned>(r.poly_words), static_cast<unsigned>(r.fifo_capacity),
+            static_cast<unsigned>(r.tex_words));
+        draw_text(40, 408, line);
         snprintf(line, sizeof(line), "SCENE G:%u C:%u A:%u",
             r.scene_geometry ? 1u : 0u, r.scene_colour ? 1u : 0u,
             r.scene_attributes ? 1u : 0u);
-    else
+    } else {
+        snprintf(line, sizeof(line), "PPC CYC:%08X PCSTEP:%u",
+            static_cast<unsigned>(r.real_boot_cycles),
+            static_cast<unsigned>(r.real_boot_pc_changes));
+        draw_text(40, 408, line);
         snprintf(line, sizeof(line), "VF3 BOOT:%u PC:%08X",
             static_cast<unsigned>(r.real_boot_frames), r.real_boot_pc);
+    }
     draw_text(40, 426, line);
     draw_text(40, 444, r.synthetic_fixture ?
         (r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL") :
