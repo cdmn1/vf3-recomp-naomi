@@ -277,19 +277,19 @@ static void draw_screen(const Results &r)
     snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
     draw_text(40, 316, line);
     snprintf(line, sizeof(line), "VROM STATUS: %d", r.vrom_status);
-    draw_text(40, 340, line);
+    draw_text(40, 336, line);
     snprintf(line, sizeof(line), "MESHES: %u VERTICES: %u CACHE: %u",
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices),
         static_cast<unsigned>(r.cached));
-    draw_text(40, 364, line);
+    draw_text(40, 356, line);
     snprintf(line, sizeof(line), "RAM:%u TILE:%u", static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes));
-    draw_text(40, 388, line);
+    draw_text(40, 376, line);
     snprintf(line, sizeof(line), "CULL:%u/%u POLY:%u", static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words), static_cast<unsigned>(r.poly_words));
-    draw_text(40, 412, line);
+    draw_text(40, 396, line);
     snprintf(line, sizeof(line), "FIFO:%u TEX:%u", static_cast<unsigned>(r.fifo_capacity), static_cast<unsigned>(r.tex_words));
-    draw_text(40, 436, line);
+    draw_text(40, 416, line);
     snprintf(line, sizeof(line), "PVR:%u>%u HW:%u KOS:%u NAOMI:16", static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after), r.hw_mode, r.pvr_total / (1024u * 1024u));
-    draw_text(40, 460, line);
+    draw_text(40, 436, line);
     draw_text(40, 480, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
     pvr_list_finish();
     pvr_scene_finish();
