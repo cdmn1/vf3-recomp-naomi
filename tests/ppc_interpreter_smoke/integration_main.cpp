@@ -290,7 +290,7 @@ static void draw_screen(const Results &r)
     draw_text(40, 416, line);
     snprintf(line, sizeof(line), "PVR:%u>%u HW:%u KOS:%u NAOMI:16", static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after), r.hw_mode, r.pvr_total / (1024u * 1024u));
     draw_text(40, 436, line);
-    draw_text(40, 480, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
+    draw_text(40, 456, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
     pvr_list_finish();
     pvr_scene_finish();
 }
