@@ -153,12 +153,12 @@ static Results run_integration()
         const uint32_t dma_source_word = 0xA1B2C3D4u;
         *reinterpret_cast<uint32_t *>(board.ram.data() + 0x100) = dma_source_word;
         program[0] = 0x3DE08400u; // lis r15, 0x8400 (Real3D register window)
-        program[1] = 0x821F0000u; // lwz r16, 0(r15)
+        program[1] = 0x820F0000u; // lwz r16, 0(r15)
         program[2] = 0x3E20C200u; // lis r17, 0xC200 (Real3D DMA registers)
         program[3] = 0x3E400001u; // lis r18, 1 (bswap(0x100), DMA source)
-        program[4] = 0x92910000u; // stw r18, 0(r17)
+        program[4] = 0x92510000u; // stw r18, 0(r17)
         program[5] = 0x3E600400u; // lis r19, 0x0400
-        program[6] = 0x626300F1u; // ori r19, r19, 0x00F1 (bswap(0xF1000004))
+        program[6] = 0x627300F1u; // ori r19, r19, 0x00F1 (bswap(0xF1000004))
         program[7] = 0x92710004u; // stw r19, 4(r17)
         program[8] = 0x3E800100u; // lis r20, 0x0100 (bswap(1), one DMA word)
         program[9] = 0x92910008u; // stw r20, 8(r17) (start DMA)
