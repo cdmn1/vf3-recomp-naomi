@@ -184,9 +184,9 @@ def pack(executable: Path, zip_path: Path, output: Path,
     with output.open("r+b") as target:
         target.seek(payload_offset)
         target.write(header)
-        for name, region in REGIONS.items():
-            target.seek(manifest_regions[list(REGIONS).index(name)]["offset"])
-            target.write(regions_data[name])
+        for region in manifest_regions:
+            target.seek(region["offset"])
+            target.write(regions_data[region["name"]])
         target.truncate(current)
 
     manifest = {
