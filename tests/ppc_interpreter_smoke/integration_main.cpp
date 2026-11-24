@@ -184,8 +184,8 @@ static Results run_integration()
         r.real3d_bus = real3d_executed == 22 &&
                        board.cpu.s.r[16] == 0xFFFFFFFDu &&
                        board.cpu.s.r[22] == dma_source_word &&
-                       board.cull_lo[0] == bswap32(cull_source_word) &&
-                       board.poly_ram[0] == bswap32(poly_source_word) &&
+                       board.cull_lo[0] == 0x44332211u &&
+                       board.poly_ram[0] == 0x88776655u &&
                        !board.cpu.s.fatal;
     }
 
