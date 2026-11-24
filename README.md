@@ -47,11 +47,13 @@ mount, fixed and banked CROM access, VROM streaming, Model 3 board initializatio
 PPC bus reads/writes, and the upstream SceneBuilder parser/cache.
 
 Its PPC-programmed Real3D DMA probe transfers marker words from PPC RAM into
-tile RAM, low culling RAM, high culling RAM, and polygon RAM. It also enables
-DMA completion reporting, reads the completion status, and acknowledges the
-completion interrupt. These checks validate the mapped bus and memory paths;
-they do not yet demonstrate a complete VF3 boot, texture upload, or rendered
-game frame. The v153 integration ROM passed this probe in Flycast.
+tile RAM, low culling RAM, high culling RAM, and polygon RAM. It also enables DMA completion reporting, reads the completion status, and
+acknowledges the completion interrupt. The probe then DMA-writes a synthetic
+32x32 16-bit texture record into the Real3D texture FIFO, issues the flush
+register, and checks decoded texels in texture RAM. These checks validate the
+mapped bus, DMA and texture-upload memory paths; they do not yet demonstrate a
+complete VF3 boot or rendered game frame. The v154 integration ROM passed the
+DMA and completion checks in Flycast; the expanded texture test is being built.
 
 The image contains synthetic markers and a tiny synthetic triangle only. No
 commercial VF3 ROMs, executables, or extracted game assets are included.
