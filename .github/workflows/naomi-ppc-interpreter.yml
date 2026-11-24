@@ -317,6 +317,7 @@ jobs:
       # [pack-real-vf3] Build the real-ROM image using the fixed runtime payload slot.
       # [pack-real-vf3] Package real ROMs by replacing the fixed-offset synthetic fixture.
       # [pack-real-vf3] Verify mounted program ROM and replace synthetic payload with real VF3 data.
+      # [pack-real-vf3] Run real PPC reset-ROM execution and live SceneBuilder probe.
       - name: Download, verify and package user-supplied VF3 Revision D ROMs
         if: (github.event_name == 'workflow_dispatch' && inputs.pack_real_vf3) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[pack-real-vf3]'))
         env:
