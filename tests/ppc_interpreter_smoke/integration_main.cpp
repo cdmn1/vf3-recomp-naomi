@@ -75,6 +75,8 @@ struct Results {
     bool scene_attributes = false;
     bool pvr_scene = false;
     video::Meshes render_meshes;
+    alignas(32) uint16_t pvr_texture_pixels[32 * 32] = {};
+    bool pvr_texture_source = false;
     int mount_status = 0;
     int vrom_status = 0;
     size_t meshes = 0;
@@ -306,6 +308,17 @@ static Results run_integration()
                       board.tex_ram[32u * 2048u + 32u] == 0 &&
                       board.tex_ram[0] == 0;
 
+        // Preserve a real decoded 32x32 Model3 texture page for the PVR2 path.
+        // The texture remains in Model3's decoded 16-bit format; this first
+        // upload probe deliberately uses RGB565 to isolate transfer/UV/raster.
+        if (r.texture16) {
+            for (unsigned y = 0; y < 32; ++y)
+                for (unsigned x = 0; x < 32; ++x)
+                    r.pvr_texture_pixels[y * 32u + x] =
+                        board.tex_ram[(1056u + y) * 2048u + 32u + x];
+            r.pvr_texture_source = true;
+        }
+
         // Exercise each 8-bit lane independently so the on-screen result
         // identifies which upload mode or byte-preservation check fails.
         program[0] = 0x3E40200Au; // lis r18, 0x200A (bswap(0xA20), low-byte record)
@@ -465,6 +478,8 @@ static Results run_integration()
 #define FONT_H 18
 #define FONT_SOURCE_H 24
 static pvr_ptr_t font_texture;
+static pvr_ptr_t scene_texture;
+static bool scene_texture_ready;
 
 static void font_init()
 {
@@ -510,6 +525,32 @@ static void draw_text(float x, float y, const char *s)
     }
 }
 
+static void draw_scene_texture()
+{
+    if (!scene_texture_ready) return;
+    pvr_poly_cxt_t cxt;
+    pvr_poly_hdr_t header;
+    pvr_poly_cxt_txr(&cxt, PVR_LIST_OP_POLY,
+        PVR_TXRFMT_RGB565 | PVR_TXRFMT_NONTWIDDLED,
+        32, 32, scene_texture, PVR_FILTER_NONE);
+    cxt.gen.culling = PVR_CULLING_NONE;
+    pvr_poly_compile(&header, &cxt);
+    pvr_prim(&header, sizeof(header));
+    pvr_vertex_t v{};
+    v.flags = PVR_CMD_VERTEX; v.x = 500.0f; v.y = 250.0f;
+    v.z = 1.0f; v.u = 0.0f; v.v = 0.0f; v.argb = 0xFFFFFFFFu;
+    pvr_prim(&v, sizeof(v));
+    v.flags = PVR_CMD_VERTEX; v.x = 500.0f; v.y = 378.0f;
+    v.u = 0.0f; v.v = 1.0f;
+    pvr_prim(&v, sizeof(v));
+    v.flags = PVR_CMD_VERTEX; v.x = 628.0f; v.y = 250.0f;
+    v.u = 1.0f; v.v = 0.0f;
+    pvr_prim(&v, sizeof(v));
+    v.flags = PVR_CMD_VERTEX_EOL; v.x = 628.0f; v.y = 378.0f;
+    v.u = 1.0f; v.v = 1.0f;
+    pvr_prim(&v, sizeof(v));
+}
+
 static void draw_scene_meshes(const Results &r)
 {
     if (!r.render_meshes) return;
@@ -546,6 +587,7 @@ static void draw_screen(const Results &r)
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_OP_POLY);
     draw_scene_meshes(r);
+    draw_scene_texture();
     pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
     draw_text(40, 48, "VF3 NAOMI - MODEL3 INTEGRATION");
@@ -583,6 +625,7 @@ static void draw_screen(const Results &r)
         r.scene_attributes ? 1u : 0u);
     draw_text(40, 428, line);
     draw_text(40, 446, r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL");
+    draw_text(40, 464, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
     pvr_list_finish();
     pvr_scene_finish();
 }
@@ -598,6 +641,14 @@ int main()
         for (;;) thd_sleep(1000);
     }
     font_init();
+    if (results.pvr_texture_source) {
+        scene_texture = pvr_mem_malloc(sizeof(results.pvr_texture_pixels));
+        if (scene_texture) {
+            pvr_txr_load(results.pvr_texture_pixels, scene_texture,
+                         sizeof(results.pvr_texture_pixels));
+            scene_texture_ready = true;
+        }
+    }
     for (;;) {
         draw_screen(results);
         thd_sleep(16);
