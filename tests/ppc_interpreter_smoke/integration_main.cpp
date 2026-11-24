@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <stdio.h>
 #include <cstring>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -803,8 +804,15 @@ static void draw_scene_texture()
     pvr_prim(&v, sizeof(v));
 }
 
-static void draw_scene_builder_output(const Results &r)
+struct PvrRenderStats {
+    uint32_t triangles_submitted = 0;
+    uint32_t triangles_rejected = 0;
+    uint32_t vertices_submitted = 0;
+};
+
+static PvrRenderStats draw_scene_builder_output(const Results &r)
 {
+    PvrRenderStats stats{};
     for (const video::Viewport &viewport : r.render_scene.viewports) {
         for (const video::Model &model : viewport.models) {
             if (!model.meshes) continue;
@@ -824,7 +832,10 @@ static void draw_scene_builder_output(const Results &r)
                 pvr_poly_compile(&header, &cxt);
                 pvr_prim(&header, sizeof(header));
 
+                // Reject whole triangles rather than emitting incomplete strips.
                 for (size_t first = 0; first + 2 < mesh.verts.size(); first += 3) {
+                    pvr_vertex_t vertices[3]{};
+                    bool valid = true;
                     for (size_t j = 0; j < 3; ++j) {
                         const video::Vertex &source = mesh.verts[first + j];
                         const float *m = model.matrix.m;
@@ -835,13 +846,20 @@ static void draw_scene_builder_output(const Results &r)
                         const float vz = m[2] * source.pos[0] + m[6] * source.pos[1] +
                             m[10] * source.pos[2] + m[14];
                         const float depth = -vz;
-                        if (depth <= 0.001f) continue;
-                        pvr_vertex_t vertex{};
+                        if (!(depth > 0.001f) || !std::isfinite(depth)) {
+                            valid = false;
+                            break;
+                        }
+                        pvr_vertex_t &vertex = vertices[j];
                         vertex.flags = j == 2 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
                         vertex.x = viewport.vp_x + viewport.vp_w *
                             (vx / depth - viewport.left) / (viewport.right - viewport.left);
                         vertex.y = viewport.vp_y + viewport.vp_h *
                             (viewport.top - vy / depth) / (viewport.top - viewport.bottom);
+                        if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y)) {
+                            valid = false;
+                            break;
+                        }
                         vertex.z = 1.0f;
                         vertex.u = textured ? source.uv[0] : 0.0f;
                         vertex.v = textured ? source.uv[1] : 0.0f;
@@ -851,12 +869,20 @@ static void draw_scene_builder_output(const Results &r)
                             source.colour[1] / 255.0f,
                             source.colour[2] / 255.0f);
                         vertex.oargb = 0;
-                        pvr_prim(&vertex, sizeof(vertex));
                     }
+                    if (!valid) {
+                        ++stats.triangles_rejected;
+                        continue;
+                    }
+                    for (const pvr_vertex_t &vertex : vertices)
+                        pvr_prim(&vertex, sizeof(vertex));
+                    ++stats.triangles_submitted;
+                    stats.vertices_submitted += 3;
                 }
             }
         }
     }
+    return stats;
 }
 
 static void draw_screen(const Results &r)
@@ -864,7 +890,7 @@ static void draw_screen(const Results &r)
     pvr_wait_ready();
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_OP_POLY);
-    draw_scene_builder_output(r);
+    const PvrRenderStats pvr_stats = draw_scene_builder_output(r);
     pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
     char title[64];
@@ -953,14 +979,15 @@ static void draw_screen(const Results &r)
     draw_text(40, 426, line);
     draw_text(40, 444, r.synthetic_fixture ?
         (r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL") :
-        (r.real_scene ? "REAL VF3 SCENE -> PVR2: PASS" : "REAL VF3 SCENE -> PVR2: WAIT"));
+        (r.real_scene ? "REAL VF3 SCENE EXTRACT: PASS" : "REAL VF3 SCENE EXTRACT: WAIT"));
     if (r.synthetic_fixture)
         draw_text(40, 462, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
     else {
-        snprintf(line, sizeof(line), "COPY:%s IDLE:%u %08X=%02X",
+        snprintf(line, sizeof(line), "COPY:%s PVR TRI:%u V:%u SKIP:%u",
             r.real_program_copied ? "PASS" : "WAIT",
-            static_cast<unsigned>(r.real_boot_idle_samples),
-            r.real_boot_poll_addr, static_cast<unsigned>(r.real_boot_poll_value & 0xFFu));
+            static_cast<unsigned>(pvr_stats.triangles_submitted),
+            static_cast<unsigned>(pvr_stats.vertices_submitted),
+            static_cast<unsigned>(pvr_stats.triangles_rejected));
         draw_text(40, 462, line);
     }
     pvr_list_finish();
