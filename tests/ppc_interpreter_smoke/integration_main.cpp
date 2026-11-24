@@ -40,12 +40,19 @@ static const uint32_t expected_vrom_edge[8] = {
     0xD0010001u, 0xD0020002u, 0xD0030003u, 0xD0040004u
 };
 
-static const uint32_t expected_model[19] = {
-    0x00000000u, 0x00000006u, 0x00000000u, 0x00000000u,
+static const uint32_t expected_model[38] = {
+    // Polygon 1: white triangle; not the final polygon in this model.
+    0x00000000u, 0x00000002u, 0x00000000u, 0x00000000u,
     0xFFFFFFFFu, 0x00000000u, 0x00800000u,
     0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u,
     0x00010000u, 0x00000000u, 0x00000000u, 0x00000000u,
-    0x00000000u, 0x00010000u, 0x00000000u, 0x00000000u
+    0x00000000u, 0x00010000u, 0x00000000u, 0x00000000u,
+    // Polygon 2: independently coloured triangle; terminates the model.
+    0x00000000u, 0x00000006u, 0x00000000u, 0x00000000u,
+    0xFF0000FFu, 0x00000000u, 0x00800000u,
+    0x00008000u, 0x00000000u, 0x00000000u, 0x00000000u,
+    0x00018000u, 0x00000000u, 0x00000000u, 0x00000000u,
+    0x00008000u, 0x00010000u, 0x00000000u, 0x00000000u
 };
 
 struct Results {
@@ -394,19 +401,19 @@ static Results run_integration()
             naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
     }
 
-    alignas(32) uint32_t actual_model[19] = {};
-    r.vrom_status = naomi_model3_vrom_read_words(0x00100000u, actual_model, 19);
+    alignas(32) uint32_t actual_model[38] = {};
+    r.vrom_status = naomi_model3_vrom_read_words(0x00100000u, actual_model, 38);
     r.vrom = r.vrom_status == NAOMI_CART_VROM_OK &&
              std::memcmp(actual_model, expected_model, sizeof(expected_model)) == 0;
 
     // Cross the 64 KiB scratch-page boundary with non-zero markers, then
     // verify the 32 MiB mirror and 24-bit word-address wrap against the model.
     alignas(32) uint32_t edge_words[8] = {};
-    alignas(32) uint32_t mirror_words[19] = {};
-    alignas(32) uint32_t wrapped_words[19] = {};
+    alignas(32) uint32_t mirror_words[38] = {};
+    alignas(32) uint32_t wrapped_words[38] = {};
     const int edge_status = naomi_model3_vrom_read_words(0x00003FFCu, edge_words, 8);
-    const int mirror_status = naomi_model3_vrom_read_words(0x00900000u, mirror_words, 19);
-    const int wrap_status = naomi_model3_vrom_read_words(0x01100000u, wrapped_words, 19);
+    const int mirror_status = naomi_model3_vrom_read_words(0x00900000u, mirror_words, 38);
+    const int wrap_status = naomi_model3_vrom_read_words(0x01100000u, wrapped_words, 38);
     r.vrom_edges = edge_status == NAOMI_CART_VROM_OK &&
         std::memcmp(edge_words, expected_vrom_edge, sizeof(expected_vrom_edge)) == 0 &&
         mirror_status == NAOMI_CART_VROM_OK &&
@@ -436,7 +443,7 @@ static Results run_integration()
         const bool second = builder.naomi_test_vrom_model(
             0x00100000u, board.poly_ram.data(), &second_meshes, &second_vertices);
         r.cached = builder.cached();
-        r.scene = first && second && r.meshes == 1 && r.vertices == 3 &&
+        r.scene = first && second && r.meshes == 2 && r.vertices == 6 &&
                   second_meshes == r.meshes && second_vertices == r.vertices &&
                   cache_after_first == 1 && r.cached == 1;
     }
