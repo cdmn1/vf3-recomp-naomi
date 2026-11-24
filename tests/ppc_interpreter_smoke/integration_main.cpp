@@ -948,7 +948,7 @@ static PvrRenderStats draw_scene_builder_output(const Results &r)
                         vertex.z = 1.0f;
                         // SceneBuilder UVs are measured in texels (1.0 = one source texel),
                         // while PVR2 expects normalized coordinates. Keep the original
-                        // mesh dimensions here even when its upload was downscaled to 128.
+                        // mesh dimensions here even when its upload was downscaled to 128 (real VF3 rebuild).
                         vertex.u = textured ? source.uv[0] / float(mesh.width) : 0.0f;
                         vertex.v = textured ? source.uv[1] / float(mesh.height) : 0.0f;
                         vertex.argb = PVR_PACK_COLOR(
