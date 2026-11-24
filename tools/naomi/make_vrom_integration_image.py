@@ -2,7 +2,7 @@
 """Append a synthetic VF3NROM image for Naomi NetDIMM/VROM integration tests.
 
 The image contains marked synthetic fixed/banked CROM words, a mostly zero-filled
-VROM region, and one tiny synthetic triangle model. It contains no commercial game data.
+VROM region, and one tiny synthetic two-polygon model. It contains no commercial game data.
 """
 from __future__ import annotations
 
@@ -33,13 +33,20 @@ BANKED_BUS_MARKER_OFFSET = BANKED_BUS_MARKER_BANK * 0x00800000
 CHUNK = 1024 * 1024
 
 MODEL_WORDS = (
-    0x00000000, 0x00000006, 0x00000000, 0x00000000,
+    # Polygon 1: white triangle, followed by another polygon.
+    0x00000000, 0x00000002, 0x00000000, 0x00000000,
     0xFFFFFFFF, 0x00000000, 0x00800000,
     0x00000000, 0x00000000, 0x00000000, 0x00000000,
     0x00010000, 0x00000000, 0x00000000, 0x00000000,
     0x00000000, 0x00010000, 0x00000000, 0x00000000,
+    # Polygon 2: red triangle, final polygon marker set.
+    0x00000000, 0x00000006, 0x00000000, 0x00000000,
+    0xFF0000FF, 0x00000000, 0x00800000,
+    0x00008000, 0x00000000, 0x00000000, 0x00000000,
+    0x00018000, 0x00000000, 0x00000000, 0x00000000,
+    0x00008000, 0x00010000, 0x00000000, 0x00000000,
 )
-MODEL_BYTES = struct.pack("<19I", *MODEL_WORDS)
+MODEL_BYTES = struct.pack("<38I", *MODEL_WORDS)
 
 
 def align_up(value: int) -> int:
@@ -148,7 +155,7 @@ def build(executable: Path, output: Path) -> dict:
 
     manifest = {
         "format": "VF3NROM", "version": 1,
-        "purpose": "synthetic Naomi NetDIMM VROM/SceneBuilder integration test",
+        "purpose": "synthetic Naomi NetDIMM VROM/SceneBuilder two-polygon integration test",
         "executable": str(executable), "executable_size": executable_size,
         "payload_offset": PAYLOAD_OFFSET, "payload_size": payload_size,
         "image_size": image_end, "model_word_address": MODEL_WORD_ADDRESS,
@@ -178,7 +185,7 @@ def main() -> int:
         return 1
     print(f"Created: {args.output}")
     print(f"Image size: {manifest['image_size']} bytes")
-    print(f"VROM model: word address 0x{MODEL_WORD_ADDRESS:06x}, {len(MODEL_WORDS)} words")
+    print(f"VROM model: word address 0x{MODEL_WORD_ADDRESS:06x}, {len(MODEL_WORDS)} words (2 polygons)")
     print("Commercial game data: not included")
     return 0
 
