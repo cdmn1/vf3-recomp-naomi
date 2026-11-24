@@ -444,7 +444,8 @@ static Results run_integration()
         const size_t cache_after_first = builder.cached();
         size_t second_meshes = 0, second_vertices = 0;
         const bool second = builder.naomi_test_vrom_model(
-            0x00100000u, board.poly_ram.data(), &second_meshes, &second_vertices);
+            0x00100000u, board.poly_ram.data(), &second_meshes, &second_vertices,
+            nullptr, nullptr);
         r.cached = builder.cached();
         r.scene = first && second && r.meshes == 2 && r.vertices == 6 &&
                   second_meshes == r.meshes && second_vertices == r.vertices &&
