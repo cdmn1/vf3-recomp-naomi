@@ -544,6 +544,10 @@ static void draw_screen(const Results &r)
         static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after),
         r.hw_mode, r.pvr_total / (1024u * 1024u));
     draw_text(40, 446, line);
+    snprintf(line, sizeof(line), "SCENE G:%u C:%u A:%u",
+        r.scene_geometry ? 1u : 0u, r.scene_colour ? 1u : 0u,
+        r.scene_attributes ? 1u : 0u);
+    draw_text(360, 446, line);
     pvr_list_finish();
     pvr_scene_finish();
 }
