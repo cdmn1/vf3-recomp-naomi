@@ -49,7 +49,7 @@ class PackerTests(unittest.TestCase):
             }
             data = {
                 "fixed_crom": bytearray(b"FIXED123"),
-                "banked_crom": bytearray(b"BANKED-REGION!!"),
+                "banked_crom": bytearray(b"BANKED-REGION!!!"),
                 "vrom": bytearray(b"VROMDATA"),
             }
             offsets = {}
