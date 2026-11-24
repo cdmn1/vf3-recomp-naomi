@@ -96,7 +96,9 @@ struct Results {
     bool pvr_error = false;
     bool synthetic_fixture = false;
     bool real_vrom = false;
+    bool program_rom = false;
     size_t real_vrom_nonzero = 0;
+    size_t program_rom_nonblank = 0;
 };
 
 static Results run_integration()
@@ -127,6 +129,14 @@ static Results run_integration()
     r.pvr_total = static_cast<unsigned>(PVR_RAM_SIZE);
     r.pvr_before = pvr_mem_available();
     r.board_load = board.load("", error);
+    const uint8_t *fixed_program = naomi_model3_crom_fixed();
+    if (fixed_program && !r.synthetic_fixture) {
+        for (uint32_t i = 0; i < 0x0A0000u; ++i) {
+            const uint8_t byte = fixed_program[0x710000u + i];
+            if (byte != 0u && byte != 0xFFu) ++r.program_rom_nonblank;
+        }
+        r.program_rom = r.program_rom_nonblank > 0x1000u;
+    }
     r.pvr_after = pvr_mem_available();
     r.pvr_error = error.find("PVR VRAM") != std::string::npos;
     r.ram_bytes = board.ram.size();
@@ -732,7 +742,10 @@ static void draw_screen(const Results &r)
         "SYNTHETIC ROM DATA - TEST FIXTURE" : "REAL VF3 REV D ROM PAYLOAD");
     draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
     draw_text(40, 120, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
-    draw_text(40, 138, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
+    draw_text(40, 138, r.synthetic_fixture ?
+        (r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL") :
+        (r.board_load && r.program_rom ? "MODEL3 LOAD / VF3 PPC ROM: PASS" :
+                                        "MODEL3 LOAD / VF3 PPC ROM: FAIL"));
     draw_text(40, 156, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
     draw_text(40, 174, r.power_ppc ? "SYNTHETIC PPC CORE SMOKE: PASS" : "SYNTHETIC PPC CORE SMOKE: FAIL");
     draw_text(40, 192, r.synthetic_fixture ?
