@@ -179,6 +179,27 @@ static Results run_integration()
             // exactly texture_pattern[0..1023] on the little-endian target.
             texture_record[i + 2] = __builtin_bswap32(fifo_word);
         }
+
+        // Two more independent texture records exercise the 8-bit low-byte
+        // and high-byte upload modes. Each is flushed separately because the
+        // upstream FIFO parser's record-length stepping is validated one
+        // record at a time here.
+        uint32_t *texture8_low = reinterpret_cast<uint32_t *>(board.ram.data() + 0xA20);
+        uint32_t *texture8_high = reinterpret_cast<uint32_t *>(board.ram.data() + 0xE40);
+        texture8_low[0] = 0xFC070000u;  // bswap(0x000007FC): 32x32 8-bit payload
+        texture8_low[1] = 0x02012001u;  // bswap(0x01200102): type 1, LSB/low byte, X=64 Y=64
+        texture8_high[0] = 0xFC070000u;
+        texture8_high[1] = 0x02014001u; // bswap(0x01400102): type 1, MSB/high byte, X=96 Y=64
+        for (unsigned i = 0; i < 256; ++i) {
+            texture8_low[i + 2] = 0x5A5A5A5Au;
+            texture8_high[i + 2] = 0x3C3C3C3Cu;
+        }
+        for (unsigned y = 0; y < 32; ++y) {
+            for (unsigned x = 0; x < 32; ++x) {
+                board.tex_ram[(64u + y) * 2048u + 64u + x] = 0xA500u;
+                board.tex_ram[(64u + y) * 2048u + 96u + x] = 0x00A5u;
+            }
+        }
         program[0] = 0x3DE08400u; // lis r15, 0x8400 (Real3D register window)
         program[1] = 0x820F0000u; // lwz r16, 0(r15)
         program[2] = 0x3E20C200u; // lis r17, 0xC200 (Real3D DMA registers)
@@ -249,6 +270,39 @@ static Results run_integration()
                        // Confirm page 0 and the old origin were not accidentally written.
                        board.tex_ram[32u * 2048u + 32u] == 0 &&
                        board.tex_ram[0] == 0 &&
+                       !board.cpu.s.fatal;
+
+        // Exercise the 8-bit low-byte and high-byte modes through PPC DMA,
+        // with sentinels proving that each upload preserves the other byte.
+        program[0] = 0x3E40200Au; // lis r18, 0x200A (bswap(0xA20), low-byte record)
+        program[1] = 0x92510000u; // stw r18, 0(r17)
+        program[2] = 0x3A600094u; // addi r19, r0, 0x0094 (texture FIFO)
+        program[3] = 0x92710004u; // stw r19, 4(r17)
+        program[4] = 0x3E800201u; // lis r20, 0x0201 (bswap(258), 258 DMA words)
+        program[5] = 0x92910008u; // stw r20, 8(r17)
+        program[6] = 0x8B11000Cu; // lbz r24, 12(r17)
+        program[7] = 0x9B31000Du; // stb r25, 13(r17)
+        program[8] = 0x3F408800u; // lis r26, 0x8800 (Real3D flush register)
+        program[9] = 0x937A0000u; // stw r27, 0(r26) (flush low-byte upload)
+        program[10] = 0x3E40400Eu; // lis r18, 0x400E (bswap(0xE40), high-byte record)
+        program[11] = 0x92510000u; // stw r18, 0(r17)
+        program[12] = 0x3A600094u; // addi r19, r0, 0x0094
+        program[13] = 0x92710004u; // stw r19, 4(r17)
+        program[14] = 0x92910008u; // stw r20, 8(r17)
+        program[15] = 0x8B11000Cu; // lbz r24, 12(r17)
+        program[16] = 0x9B31000Du; // stb r25, 13(r17)
+        program[17] = 0x937A0000u; // stw r27, 0(r26) (flush high-byte upload)
+        board.cpu.s.pc = 0;
+        board.cpu.s.npc = 0;
+        const int texture8_executed = board.cpu.execute(18);
+        r.real3d_bus = r.real3d_bus &&
+                       texture8_executed == 18 &&
+                       board.cpu.s.r[24] == 1u &&
+                       board.tex_fifo.empty() &&
+                       board.tex_ram[64u * 2048u + 64u] == 0xA55Au &&
+                       board.tex_ram[95u * 2048u + 95u] == 0xA55Au &&
+                       board.tex_ram[64u * 2048u + 96u] == 0x3CA5u &&
+                       board.tex_ram[95u * 2048u + 127u] == 0x3CA5u &&
                        !board.cpu.s.fatal;
     }
 
