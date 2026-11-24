@@ -33,6 +33,11 @@ const Profile VF3_REV_D = [] {
 // This probe mounts the synthetic NetDIMM image, initializes the real Model3
 // board storage, and invokes the production SceneBuilder parser/cache.
 
+static const uint32_t expected_vrom_edge[8] = {
+    0xE0010001u, 0xE0020002u, 0xE0030003u, 0xE0040004u,
+    0xE0050005u, 0xE0060006u, 0xE0070007u, 0xE0080008u
+};
+
 static const uint32_t expected_model[19] = {
     0x00000000u, 0x00000006u, 0x00000000u, 0x00000000u,
     0xFFFFFFFFu, 0x00000000u, 0x00800000u,
@@ -53,6 +58,7 @@ struct Results {
     bool crom = false;
     bool crom_cache = false;
     bool vrom = false;
+    bool vrom_edges = false;
     bool scene = false;
     int mount_status = 0;
     int vrom_status = 0;
@@ -390,6 +396,21 @@ static Results run_integration()
     r.vrom = r.vrom_status == NAOMI_CART_VROM_OK &&
              std::memcmp(actual_model, expected_model, sizeof(expected_model)) == 0;
 
+    // Cross the 64 KiB scratch-page boundary with non-zero markers, then
+    // verify the 32 MiB mirror and 24-bit word-address wrap against the model.
+    alignas(32) uint32_t edge_words[8] = {};
+    alignas(32) uint32_t mirror_words[19] = {};
+    alignas(32) uint32_t wrapped_words[19] = {};
+    const int edge_status = naomi_model3_vrom_read_words(0x00003FFCu, edge_words, 8);
+    const int mirror_status = naomi_model3_vrom_read_words(0x00900000u, mirror_words, 19);
+    const int wrap_status = naomi_model3_vrom_read_words(0x01100000u, wrapped_words, 19);
+    r.vrom_edges = edge_status == NAOMI_CART_VROM_OK &&
+        std::memcmp(edge_words, expected_vrom_edge, sizeof(expected_vrom_edge)) == 0 &&
+        mirror_status == NAOMI_CART_VROM_OK &&
+        std::memcmp(mirror_words, expected_model, sizeof(expected_model)) == 0 &&
+        wrap_status == NAOMI_CART_VROM_OK &&
+        std::memcmp(wrapped_words, expected_model, sizeof(expected_model)) == 0;
+
     if (r.vrom && board.poly_ram.size() == 0x400000u / 4u) {
         video::SceneBuilder builder;
         const bool first = builder.naomi_test_vrom_model(
@@ -466,6 +487,7 @@ static void draw_screen(const Results &r)
     draw_text(40, 176, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
     draw_text(40, 196, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
     draw_text(40, 216, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
+    draw_text(40, 226, r.vrom_edges ? "VROM PAGE/MIRROR/WRAP: PASS" : "VROM PAGE/MIRROR/WRAP: FAIL");
     draw_text(40, 236, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
     draw_text(40, 256, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
     draw_text(40, 276, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
