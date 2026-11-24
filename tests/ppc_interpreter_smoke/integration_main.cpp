@@ -48,6 +48,7 @@ struct Results {
     bool power_ppc = false;
     bool crom_bus = false;
     bool tile_bus = false;
+    bool real3d_bus = false;
     bool crom = false;
     bool vrom = false;
     bool scene = false;
@@ -146,6 +147,30 @@ static Results run_integration()
         r.tile_bus = tile_executed == 5 &&
                      board.cpu.s.r[14] == 0xA55AC33Cu &&
                      !board.cpu.s.fatal;
+
+        // Read the Real3D status register, then exercise its DMA engine:
+        // copy one word from PPC RAM into the mapped tile RAM window.
+        const uint32_t dma_source_word = 0xA1B2C3D4u;
+        *reinterpret_cast<uint32_t *>(board.ram.data() + 0x100) = dma_source_word;
+        program[0] = 0x3DE08400u; // lis r15, 0x8400 (Real3D register window)
+        program[1] = 0x821F0000u; // lwz r16, 0(r15)
+        program[2] = 0x3E20C200u; // lis r17, 0xC200 (Real3D DMA registers)
+        program[3] = 0x3E400001u; // lis r18, 1 (bswap(0x100), DMA source)
+        program[4] = 0x92910000u; // stw r18, 0(r17)
+        program[5] = 0x3E600400u; // lis r19, 0x0400
+        program[6] = 0x626300F1u; // ori r19, r19, 0x00F1 (bswap(0xF1000004))
+        program[7] = 0x92710004u; // stw r19, 4(r17)
+        program[8] = 0x3E800100u; // lis r20, 0x0100 (bswap(1), one DMA word)
+        program[9] = 0x92910008u; // stw r20, 8(r17) (start DMA)
+        program[10] = 0x3EA0F100u; // lis r21, 0xF100
+        program[11] = 0x82D50004u; // lwz r22, 4(r21)
+        board.cpu.s.pc = 0;
+        board.cpu.s.npc = 0;
+        const int real3d_executed = board.cpu.execute(12);
+        r.real3d_bus = real3d_executed == 12 &&
+                       board.cpu.s.r[16] == 0xFFFFFFFDu &&
+                       board.cpu.s.r[22] == dma_source_word &&
+                       !board.cpu.s.fatal;
     }
 
     const uint8_t *fixed = naomi_model3_crom_fixed();
@@ -247,24 +272,25 @@ static void draw_screen(const Results &r)
     draw_text(40, 236, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
     draw_text(40, 256, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
     draw_text(40, 276, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
+    draw_text(40, 296, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
-    draw_text(40, 296, line);
+    draw_text(40, 316, line);
     snprintf(line, sizeof(line), "VROM STATUS: %d", r.vrom_status);
-    draw_text(40, 320, line);
+    draw_text(40, 340, line);
     snprintf(line, sizeof(line), "MESHES: %u VERTICES: %u CACHE: %u",
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices),
         static_cast<unsigned>(r.cached));
-    draw_text(40, 344, line);
+    draw_text(40, 364, line);
     snprintf(line, sizeof(line), "RAM:%u TILE:%u", static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes));
-    draw_text(40, 368, line);
+    draw_text(40, 388, line);
     snprintf(line, sizeof(line), "CULL:%u/%u POLY:%u", static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words), static_cast<unsigned>(r.poly_words));
-    draw_text(40, 392, line);
+    draw_text(40, 412, line);
     snprintf(line, sizeof(line), "FIFO:%u TEX:%u", static_cast<unsigned>(r.fifo_capacity), static_cast<unsigned>(r.tex_words));
-    draw_text(40, 416, line);
+    draw_text(40, 436, line);
     snprintf(line, sizeof(line), "PVR:%u>%u HW:%u KOS:%u NAOMI:16", static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after), r.hw_mode, r.pvr_total / (1024u * 1024u));
-    draw_text(40, 440, line);
-    draw_text(40, 464, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
+    draw_text(40, 460, line);
+    draw_text(40, 480, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
     pvr_list_finish();
     pvr_scene_finish();
 }
