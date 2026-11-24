@@ -49,6 +49,7 @@ struct Results {
     bool crom_bus = false;
     bool tile_bus = false;
     bool real3d_bus = false;
+    bool texture16 = false, texture8_low = false, texture8_high = false;
     bool crom = false;
     bool vrom = false;
     bool scene = false;
@@ -256,24 +257,23 @@ static Results run_integration()
                        board.poly_ram[0] == 0x88776655u &&
                        board.dma_status == 0 &&
                        (board.irq.state & 0x100u) == 0 &&
-                       board.tex_fifo.empty() &&
-                       // 8x8 tiled input order: decode8x8[0]=1, [1]=0,
-                       // [4]=9, [8]=3, [63]=62. Check adjacent texels,
-                       // tile boundaries, and the final texel of the 32x32 image.
-                       board.tex_ram[1056u * 2048u + 32u] == texture_pattern[1] &&
-                       board.tex_ram[1056u * 2048u + 33u] == texture_pattern[0] &&
-                       board.tex_ram[1056u * 2048u + 36u] == texture_pattern[9] &&
-                       board.tex_ram[1057u * 2048u + 32u] == texture_pattern[3] &&
-                       board.tex_ram[1056u * 2048u + 40u] == texture_pattern[65] &&
-                       board.tex_ram[1064u * 2048u + 32u] == texture_pattern[257] &&
-                       board.tex_ram[1087u * 2048u + 63u] == texture_pattern[1022] &&
-                       // Confirm page 0 and the old origin were not accidentally written.
-                       board.tex_ram[32u * 2048u + 32u] == 0 &&
-                       board.tex_ram[0] == 0 &&
                        !board.cpu.s.fatal;
+        r.texture16 = board.tex_fifo.empty() &&
+                      // 8x8 tiled input order: decode8x8[0]=1, [1]=0,
+                      // [4]=9, [8]=3, [63]=62. Check adjacent texels,
+                      // tile boundaries, and the final texel of the 32x32 image.
+                      board.tex_ram[1056u * 2048u + 32u] == texture_pattern[1] &&
+                      board.tex_ram[1056u * 2048u + 33u] == texture_pattern[0] &&
+                      board.tex_ram[1056u * 2048u + 36u] == texture_pattern[9] &&
+                      board.tex_ram[1057u * 2048u + 32u] == texture_pattern[3] &&
+                      board.tex_ram[1056u * 2048u + 40u] == texture_pattern[65] &&
+                      board.tex_ram[1064u * 2048u + 32u] == texture_pattern[257] &&
+                      board.tex_ram[1087u * 2048u + 63u] == texture_pattern[1022] &&
+                      board.tex_ram[32u * 2048u + 32u] == 0 &&
+                      board.tex_ram[0] == 0;
 
-        // Exercise the 8-bit low-byte and high-byte modes through PPC DMA,
-        // with sentinels proving that each upload preserves the other byte.
+        // Exercise each 8-bit lane independently so the on-screen result
+        // identifies which upload mode or byte-preservation check fails.
         program[0] = 0x3E40200Au; // lis r18, 0x200A (bswap(0xA20), low-byte record)
         program[1] = 0x92510000u; // stw r18, 0(r17)
         program[2] = 0x3A600094u; // addi r19, r0, 0x0094 (texture FIFO)
@@ -284,26 +284,37 @@ static Results run_integration()
         program[7] = 0x9B31000Du; // stb r25, 13(r17)
         program[8] = 0x3F408800u; // lis r26, 0x8800 (Real3D flush register)
         program[9] = 0x937A0000u; // stw r27, 0(r26) (flush low-byte upload)
-        program[10] = 0x3E40400Eu; // lis r18, 0x400E (bswap(0xE40), high-byte record)
-        program[11] = 0x92510000u; // stw r18, 0(r17)
-        program[12] = 0x3A600094u; // addi r19, r0, 0x0094
-        program[13] = 0x92710004u; // stw r19, 4(r17)
-        program[14] = 0x92910008u; // stw r20, 8(r17)
-        program[15] = 0x8B11000Cu; // lbz r24, 12(r17)
-        program[16] = 0x9B31000Du; // stb r25, 13(r17)
-        program[17] = 0x937A0000u; // stw r27, 0(r26) (flush high-byte upload)
         board.cpu.s.pc = 0;
         board.cpu.s.npc = 0;
-        const int texture8_executed = board.cpu.execute(18);
-        r.real3d_bus = r.real3d_bus &&
-                       texture8_executed == 18 &&
-                       board.cpu.s.r[24] == 1u &&
-                       board.tex_fifo.empty() &&
-                       board.tex_ram[64u * 2048u + 64u] == 0xA55Au &&
-                       board.tex_ram[95u * 2048u + 95u] == 0xA55Au &&
-                       board.tex_ram[64u * 2048u + 96u] == 0x3CA5u &&
-                       board.tex_ram[95u * 2048u + 127u] == 0x3CA5u &&
-                       !board.cpu.s.fatal;
+        const int texture8_low_executed = board.cpu.execute(10);
+        r.texture8_low = texture8_low_executed == 10 &&
+                         board.cpu.s.r[24] == 1u &&
+                         board.tex_fifo.empty() &&
+                         board.tex_ram[64u * 2048u + 64u] == 0xA55Au &&
+                         board.tex_ram[95u * 2048u + 95u] == 0xA55Au &&
+                         !board.cpu.s.fatal;
+
+        // X=3 (96 pixels), Y=2 (64 pixels), MSB/high-byte lane.
+        texture8_high[1] = 0x03014001u; // bswap(0x01400103)
+        program[0] = 0x3E40400Eu; // lis r18, 0x400E (bswap(0xE40), high-byte record)
+        program[1] = 0x92510000u; // stw r18, 0(r17)
+        program[2] = 0x3A600094u; // addi r19, r0, 0x0094
+        program[3] = 0x92710004u; // stw r19, 4(r17)
+        program[4] = 0x92910008u; // stw r20, 8(r17)
+        program[5] = 0x8B11000Cu; // lbz r24, 12(r17)
+        program[6] = 0x9B31000Du; // stb r25, 13(r17)
+        program[7] = 0x937A0000u; // stw r27, 0(r26) (flush high-byte upload)
+        board.cpu.s.pc = 0;
+        board.cpu.s.npc = 0;
+        const int texture8_high_executed = board.cpu.execute(8);
+        r.texture8_high = texture8_high_executed == 8 &&
+                          board.cpu.s.r[24] == 1u &&
+                          board.tex_fifo.empty() &&
+                          board.tex_ram[64u * 2048u + 96u] == 0x3CA5u &&
+                          board.tex_ram[95u * 2048u + 127u] == 0x3CA5u &&
+                          !board.cpu.s.fatal;
+        r.real3d_bus = r.real3d_bus && r.texture16 &&
+                       r.texture8_low && r.texture8_high;
     }
 
     const uint8_t *fixed = naomi_model3_crom_fixed();
@@ -406,22 +417,25 @@ static void draw_screen(const Results &r)
     draw_text(40, 256, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
     draw_text(40, 276, r.scene ? "SCENEBUILDER PARSE/CACHE: PASS" : "SCENEBUILDER PARSE/CACHE: FAIL");
     draw_text(40, 296, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
+    draw_text(40, 316, r.texture16 ? "REAL3D TEXTURE 16-BIT: PASS" : "REAL3D TEXTURE 16-BIT: FAIL");
+    draw_text(40, 336, r.texture8_low ? "REAL3D TEXTURE 8-BIT LOW: PASS" : "REAL3D TEXTURE 8-BIT LOW: FAIL");
+    draw_text(40, 356, r.texture8_high ? "REAL3D TEXTURE 8-BIT HIGH: PASS" : "REAL3D TEXTURE 8-BIT HIGH: FAIL");
     char line[64];
-    snprintf(line, sizeof(line), "MOUNT STATUS: %d", r.mount_status);
-    draw_text(40, 316, line);
-    snprintf(line, sizeof(line), "VROM STATUS: %d", r.vrom_status);
-    draw_text(40, 336, line);
-    snprintf(line, sizeof(line), "MESHES: %u VERTICES: %u CACHE: %u",
-        static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices),
-        static_cast<unsigned>(r.cached));
-    draw_text(40, 356, line);
-    snprintf(line, sizeof(line), "RAM:%u TILE:%u", static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes));
+    snprintf(line, sizeof(line), "MOUNT:%d VROM:%d MESH:%u VERT:%u CACHE:%u",
+        r.mount_status, r.vrom_status, static_cast<unsigned>(r.meshes),
+        static_cast<unsigned>(r.vertices), static_cast<unsigned>(r.cached));
     draw_text(40, 376, line);
-    snprintf(line, sizeof(line), "CULL:%u/%u POLY:%u", static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words), static_cast<unsigned>(r.poly_words));
+    snprintf(line, sizeof(line), "RAM:%u TILE:%u CULL:%u/%u",
+        static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes),
+        static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words));
     draw_text(40, 396, line);
-    snprintf(line, sizeof(line), "FIFO:%u TEX:%u", static_cast<unsigned>(r.fifo_capacity), static_cast<unsigned>(r.tex_words));
+    snprintf(line, sizeof(line), "POLY:%u FIFO:%u TEX:%u",
+        static_cast<unsigned>(r.poly_words), static_cast<unsigned>(r.fifo_capacity),
+        static_cast<unsigned>(r.tex_words));
     draw_text(40, 416, line);
-    snprintf(line, sizeof(line), "PVR:%u>%u HW:%u KOS:%u NAOMI:16", static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after), r.hw_mode, r.pvr_total / (1024u * 1024u));
+    snprintf(line, sizeof(line), "PVR:%u>%u HW:%u KOS:%u NAOMI:16",
+        static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after),
+        r.hw_mode, r.pvr_total / (1024u * 1024u));
     draw_text(40, 436, line);
     draw_text(40, 456, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
     pvr_list_finish();
