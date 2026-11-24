@@ -498,6 +498,7 @@ static void draw_screen(const Results &r)
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_TR_POLY);
     draw_text(40, 48, "VF3 NAOMI - MODEL3 INTEGRATION");
+    draw_text(40, 72, "SYNTHETIC ROM DATA - NO GAME ASSETS");
     draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
     draw_text(40, 136, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
     draw_text(40, 156, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
@@ -517,20 +518,19 @@ static void draw_screen(const Results &r)
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d MESH:%u VERT:%u CACHE:%u",
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.meshes),
         static_cast<unsigned>(r.vertices), static_cast<unsigned>(r.cached));
-    draw_text(40, 376, line);
+    draw_text(40, 406, line);
     snprintf(line, sizeof(line), "RAM:%u TILE:%u CULL:%u/%u",
         static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes),
         static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words));
-    draw_text(40, 396, line);
+    draw_text(40, 424, line);
     snprintf(line, sizeof(line), "POLY:%u FIFO:%u TEX:%u",
         static_cast<unsigned>(r.poly_words), static_cast<unsigned>(r.fifo_capacity),
         static_cast<unsigned>(r.tex_words));
-    draw_text(40, 416, line);
+    draw_text(40, 442, line);
     snprintf(line, sizeof(line), "PVR:%u>%u HW:%u KOS:%u NAOMI:16",
         static_cast<unsigned>(r.pvr_before), static_cast<unsigned>(r.pvr_after),
         r.hw_mode, r.pvr_total / (1024u * 1024u));
-    draw_text(40, 436, line);
-    draw_text(40, 456, r.pvr_error ? "PVR VRAM ALLOCATION FAILED" : "SYNTHETIC ROM DATA - NO GAME ASSETS");
+    draw_text(40, 460, line);
     pvr_list_finish();
     pvr_scene_finish();
 }
