@@ -41,18 +41,18 @@ static const uint32_t expected_vrom_edge[8] = {
 };
 
 static const uint32_t expected_model[38] = {
-    // Polygon 1: white triangle; not the final polygon in this model.
-    0x00000000u, 0x00000002u, 0x00000000u, 0x00000000u,
-    0xFFFFFFFFu, 0x00000000u, 0x00800000u,
-    0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u,
-    0x00010000u, 0x00000000u, 0x00000000u, 0x00000000u,
-    0x00000000u, 0x00010000u, 0x00000000u, 0x00000000u,
-    // Polygon 2: independently coloured triangle; terminates the model.
-    0x00000000u, 0x00000006u, 0x00000000u, 0x00000000u,
-    0xFF0000FFu, 0x00000000u, 0x00800000u,
-    0x00008000u, 0x00000000u, 0x00000000u, 0x00000000u,
-    0x00018000u, 0x00000000u, 0x00000000u, 0x00000000u,
-    0x00008000u, 0x00010000u, 0x00000000u, 0x00000000u
+    // Polygon 1: white triangle, smooth normals and UVs; not terminal.
+    0x00000000u, 0x0000000Au, 0x00000000u, 0x00000000u,
+    0xFFFFFFFFu, 0x00000000u, 0x00800400u,
+    0x0000007Fu, 0x00000000u, 0x00000000u, 0x00000000u,
+    0x00010000u, 0x0000007Fu, 0x00000000u, 0x01000000u,
+    0x00000000u, 0x00000000u, 0x0000007Fu, 0x00000100u,
+    // Polygon 2: red triangle with separate normals/UVs; terminal.
+    0x00000000u, 0x0000000Eu, 0x00000000u, 0x00000000u,
+    0xFF0000FFu, 0x00000000u, 0x00800400u,
+    0x0000807Fu, 0x00000000u, 0x00000000u, 0x01000100u,
+    0x00018000u, 0x0000007Fu, 0x00000000u, 0x02000100u,
+    0x00008000u, 0x00000000u, 0x0000007Fu, 0x01000200u
 };
 
 struct Results {
@@ -72,6 +72,7 @@ struct Results {
     bool scene = false;
     bool scene_geometry = false;
     bool scene_colour = false;
+    bool scene_attributes = false;
     int mount_status = 0;
     int vrom_status = 0;
     size_t meshes = 0;
@@ -440,7 +441,7 @@ static Results run_integration()
         video::SceneBuilder builder;
         const bool first = builder.naomi_test_vrom_model(
             0x00100000u, board.poly_ram.data(), &r.meshes, &r.vertices,
-            &r.scene_geometry, &r.scene_colour);
+            &r.scene_geometry, &r.scene_colour, &r.scene_attributes);
         const size_t cache_after_first = builder.cached();
         size_t second_meshes = 0, second_vertices = 0;
         const bool second = builder.naomi_test_vrom_model(
@@ -450,7 +451,7 @@ static Results run_integration()
         r.scene = first && second && r.meshes == 2 && r.vertices == 6 &&
                   second_meshes == r.meshes && second_vertices == r.vertices &&
                   cache_after_first == 1 && r.cached == 1 &&
-                  r.scene_geometry && r.scene_colour;
+                  r.scene_geometry && r.scene_colour && r.scene_attributes;
     }
     return r;
 }
@@ -521,7 +522,7 @@ static void draw_screen(const Results &r)
     draw_text(40, 244, r.vrom_port ? "VROM TEXTURE PORT: PASS" : "VROM TEXTURE PORT: FAIL");
     draw_text(40, 262, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
     draw_text(40, 280, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
-    draw_text(40, 298, r.scene ? "SCENEBUILDER PARSE/GEOMETRY/CACHE: PASS" : "SCENEBUILDER PARSE/GEOMETRY/CACHE: FAIL");
+    draw_text(40, 298, r.scene ? "SCENEBUILDER PARSE/GEOMETRY/ATTRIBUTES/CACHE: PASS" : "SCENEBUILDER PARSE/GEOMETRY/ATTRIBUTES/CACHE: FAIL");
     draw_text(40, 316, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
     draw_text(40, 334, r.texture16 ? "REAL3D TEXTURE 16-BIT: PASS" : "REAL3D TEXTURE 16-BIT: FAIL");
     draw_text(40, 352, r.texture8_low ? "REAL3D TEXTURE 8-BIT LOW: PASS" : "REAL3D TEXTURE 8-BIT LOW: FAIL");

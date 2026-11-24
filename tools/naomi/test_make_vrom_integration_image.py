@@ -66,6 +66,15 @@ class SyntheticImageTests(unittest.TestCase):
         self.assertEqual(IMAGE.MODEL_WORDS[4], 0xFFFFFFFF)
         self.assertEqual(IMAGE.MODEL_WORDS[23], 0xFF0000FF)
         self.assertNotEqual(IMAGE.MODEL_WORDS[4], IMAGE.MODEL_WORDS[23])
+        # Both polygons enable smooth per-vertex normals and textured UV input.
+        self.assertTrue(IMAGE.MODEL_WORDS[1] & 8)
+        self.assertTrue(IMAGE.MODEL_WORDS[20] & 8)
+        self.assertTrue(IMAGE.MODEL_WORDS[6] & 0x400)
+        self.assertTrue(IMAGE.MODEL_WORDS[25] & 0x400)
+        self.assertEqual(IMAGE.MODEL_WORDS[14], 0x01000000)
+        self.assertEqual(IMAGE.MODEL_WORDS[18], 0x00000100)
+        self.assertEqual(IMAGE.MODEL_WORDS[33], 0x02000100)
+        self.assertEqual(IMAGE.MODEL_WORDS[37], 0x01000200)
 
 
 if __name__ == "__main__":

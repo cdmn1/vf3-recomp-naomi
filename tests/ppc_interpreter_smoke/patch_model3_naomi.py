@@ -580,7 +580,7 @@ scene_method = """#ifdef VF3_NAOMI
 bool SceneBuilder::naomi_test_vrom_model(
     uint32_t addr, const uint32_t *polygon_ram,
     size_t *mesh_count, size_t *vertex_count,
-    bool *geometry_valid, bool *colour_valid)
+    bool *geometry_valid, bool *colour_valid, bool *attributes_valid)
 {
     if (!polygon_ram || addr < 0x100000u)
         return false;
@@ -628,10 +628,37 @@ bool SceneBuilder::naomi_test_vrom_model(
         colour = a[0] == 255 && a[1] == 255 && a[2] == 255 && a[3] == 255 &&
                  b[0] == 255 && b[1] == 0 && b[2] == 0 && b[3] == 255;
     }
+    bool attributes = parsed_meshes.size() == 2 &&
+        parsed_meshes[0]->verts.size() == 3 &&
+        parsed_meshes[1]->verts.size() == 3 &&
+        parsed_meshes[0]->textured && parsed_meshes[1]->textured &&
+        parsed_meshes[0]->width == 32 && parsed_meshes[0]->height == 32 &&
+        parsed_meshes[1]->width == 32 && parsed_meshes[1]->height == 32;
+    if (attributes) {
+        const Vertex *a = parsed_meshes[0]->verts.data();
+        const Vertex *b = parsed_meshes[1]->verts.data();
+        auto normal = [&](const float *n, float x, float y, float z) {
+            return close(n[0], x) && close(n[1], y) && close(n[2], z);
+        };
+        attributes =
+            normal(a[0].normal, 1.0f, 1.0f / 255.0f, 1.0f / 255.0f) &&
+            normal(a[1].normal, 1.0f / 255.0f, 1.0f, 1.0f / 255.0f) &&
+            normal(a[2].normal, 1.0f / 255.0f, 1.0f / 255.0f, 1.0f) &&
+            close(a[0].uv[0], 0.0f) && close(a[0].uv[1], 0.0f) &&
+            close(a[1].uv[0], 1.0f) && close(a[1].uv[1], 0.0f) &&
+            close(a[2].uv[0], 0.0f) && close(a[2].uv[1], 1.0f) &&
+            normal(b[0].normal, 1.0f, 1.0f / 255.0f, 1.0f / 255.0f) &&
+            normal(b[1].normal, 1.0f / 255.0f, 1.0f, 1.0f / 255.0f) &&
+            normal(b[2].normal, 1.0f / 255.0f, 1.0f / 255.0f, 1.0f) &&
+            close(b[0].uv[0], 1.0f) && close(b[0].uv[1], 1.0f) &&
+            close(b[1].uv[0], 2.0f) && close(b[1].uv[1], 1.0f) &&
+            close(b[2].uv[0], 1.0f) && close(b[2].uv[1], 2.0f);
+    }
     if (mesh_count) *mesh_count = meshes;
     if (vertex_count) *vertex_count = vertices;
     if (geometry_valid) *geometry_valid = geometry;
     if (colour_valid) *colour_valid = colour;
+    if (attributes_valid) *attributes_valid = attributes;
     return !test_viewport.models.empty();
 }
 #endif
@@ -649,7 +676,7 @@ test_decl = "\tsize_t cached() const { return rom_cache.size(); }"
 test_decl_naomi = test_decl + """
 #ifdef VF3_NAOMI
 \tbool naomi_test_vrom_model(uint32_t addr, const uint32_t *polygon_ram,
-\t                           size_t *mesh_count, size_t *vertex_count,\n\t                           bool *geometry_valid, bool *colour_valid);
+\t                           size_t *mesh_count, size_t *vertex_count,\n\t                           bool *geometry_valid, bool *colour_valid,\n\t                           bool *attributes_valid);
 #endif"""
 if test_decl_naomi not in scene_header:
     if scene_header.count(test_decl) != 1:

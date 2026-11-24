@@ -2,7 +2,7 @@
 """Append a synthetic VF3NROM image for Naomi NetDIMM/VROM integration tests.
 
 The image contains marked synthetic fixed/banked CROM words, a mostly zero-filled
-VROM region, and one tiny synthetic two-polygon model. It contains no commercial game data.
+VROM region, and one tiny synthetic two-polygon model with smooth normals and UVs. It contains no commercial game data.
 """
 from __future__ import annotations
 
@@ -33,18 +33,18 @@ BANKED_BUS_MARKER_OFFSET = BANKED_BUS_MARKER_BANK * 0x00800000
 CHUNK = 1024 * 1024
 
 MODEL_WORDS = (
-    # Polygon 1: white triangle, followed by another polygon.
-    0x00000000, 0x00000002, 0x00000000, 0x00000000,
-    0xFFFFFFFF, 0x00000000, 0x00800000,
-    0x00000000, 0x00000000, 0x00000000, 0x00000000,
-    0x00010000, 0x00000000, 0x00000000, 0x00000000,
-    0x00000000, 0x00010000, 0x00000000, 0x00000000,
-    # Polygon 2: red triangle, final polygon marker set.
-    0x00000000, 0x00000006, 0x00000000, 0x00000000,
-    0xFF0000FF, 0x00000000, 0x00800000,
-    0x00008000, 0x00000000, 0x00000000, 0x00000000,
-    0x00018000, 0x00000000, 0x00000000, 0x00000000,
-    0x00008000, 0x00010000, 0x00000000, 0x00000000,
+    # Polygon 1: white triangle, smooth normals and UVs, followed by another polygon.
+    0x00000000, 0x0000000A, 0x00000000, 0x00000000,
+    0xFFFFFFFF, 0x00000000, 0x00800400,
+    0x0000007F, 0x00000000, 0x00000000, 0x00000000,
+    0x00010000, 0x0000007F, 0x00000000, 0x01000000,
+    0x00000000, 0x00000000, 0x0000007F, 0x00000100,
+    # Polygon 2: red triangle with separate smooth normals and UVs, terminal.
+    0x00000000, 0x0000000E, 0x00000000, 0x00000000,
+    0xFF0000FF, 0x00000000, 0x00800400,
+    0x0000807F, 0x00000000, 0x00000000, 0x01000100,
+    0x00018000, 0x0000007F, 0x00000000, 0x02000100,
+    0x00008000, 0x00000000, 0x0000007F, 0x01000200,
 )
 MODEL_BYTES = struct.pack("<38I", *MODEL_WORDS)
 
@@ -155,7 +155,7 @@ def build(executable: Path, output: Path) -> dict:
 
     manifest = {
         "format": "VF3NROM", "version": 1,
-        "purpose": "synthetic Naomi NetDIMM VROM/SceneBuilder two-polygon integration test",
+        "purpose": "synthetic Naomi NetDIMM VROM/SceneBuilder geometry/attribute integration test",
         "executable": str(executable), "executable_size": executable_size,
         "payload_offset": PAYLOAD_OFFSET, "payload_size": payload_size,
         "image_size": image_end, "model_word_address": MODEL_WORD_ADDRESS,
