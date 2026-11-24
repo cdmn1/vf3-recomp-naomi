@@ -107,12 +107,17 @@ struct Results {
     uint32_t real_boot_pc_changes = 0;
     uint64_t real_boot_cycles = 0;
     uint32_t real_boot_r1 = 0, real_boot_r2 = 0;
-    uint32_t real_boot_lr = 0, real_boot_srr0 = 0;
-    uint32_t real_boot_msr = 0, real_boot_instruction = 0;
+    uint32_t real_boot_r3 = 0, real_boot_r4 = 0;
+    uint32_t real_boot_lr = 0, real_boot_srr0 = 0, real_boot_srr1 = 0;
+    uint32_t real_boot_msr = 0, real_boot_npc = 0, real_boot_dec = 0;
+    uint32_t real_boot_instruction = 0, real_boot_cr0 = 0;
+    int real_boot_interrupt_pending = 0;
     size_t real_program_match_words = 0;
     size_t real_scene_viewports = 0;
     size_t real_scene_models = 0;
 };
+
+static void draw_boot_progress(uint32_t frame, uint32_t pc, uint64_t cycles);
 
 static Results run_integration()
 {
@@ -447,12 +452,15 @@ static Results run_integration()
         // is expected to copy the Revision D game program (CROM 0x710000,
         // 0xA0000 bytes) into PPC RAM before transferring control to it.
         board.power_on();
+        draw_boot_progress(0, board.cpu.s.pc, 0);
         uint32_t previous_pc = board.cpu.s.pc;
         // Give the real boot ROM enough emulated time to leave its short reset
         // sequence, while recording whether execution is actually progressing.
         for (uint32_t frame = 0; frame < 300 && !board.cpu.s.fatal; ++frame) {
             board.run_frame();
             ++r.real_boot_frames;
+            if ((frame + 1u) % 25u == 0u)
+                draw_boot_progress(frame + 1u, board.cpu.s.pc, board.cpu.s.total_cycles);
             if (board.cpu.s.pc != previous_pc) {
                 ++r.real_boot_pc_changes;
                 previous_pc = board.cpu.s.pc;
@@ -462,9 +470,16 @@ static Results run_integration()
         r.real_boot_cycles = board.cpu.s.total_cycles;
         r.real_boot_r1 = board.cpu.s.r[1];
         r.real_boot_r2 = board.cpu.s.r[2];
+        r.real_boot_r3 = board.cpu.s.r[3];
+        r.real_boot_r4 = board.cpu.s.r[4];
         r.real_boot_lr = board.cpu.s.lr;
         r.real_boot_srr0 = board.cpu.s.srr0;
+        r.real_boot_srr1 = board.cpu.s.srr1;
         r.real_boot_msr = board.cpu.s.msr;
+        r.real_boot_npc = board.cpu.s.npc;
+        r.real_boot_dec = board.cpu.s.dec;
+        r.real_boot_interrupt_pending = board.cpu.s.interrupt_pending;
+        r.real_boot_cr0 = board.cpu.s.cr[0];
         if (r.real_boot_pc < board.ram.size())
             r.real_boot_instruction = reinterpret_cast<const uint32_t *>(board.ram.data())[r.real_boot_pc / 4];
         r.real_boot = r.real_boot_cycles != 0 &&
@@ -717,6 +732,25 @@ static void draw_text(float x, float y, const char *s)
     }
 }
 
+static void draw_boot_progress(uint32_t frame, uint32_t pc, uint64_t cycles)
+{
+    pvr_wait_ready();
+    pvr_scene_begin();
+    pvr_list_begin(PVR_LIST_OP_POLY);
+    pvr_list_begin(PVR_LIST_TR_POLY);
+    char line[64];
+    draw_text(40, 48, "VF3 REV D - PPC BOOT IN PROGRESS");
+    snprintf(line, sizeof(line), "FRAME: %u / 300", frame);
+    draw_text(40, 84, line);
+    snprintf(line, sizeof(line), "PPC PC: %08X", pc);
+    draw_text(40, 108, line);
+    snprintf(line, sizeof(line), "PPC CYC: %08X", static_cast<unsigned>(cycles));
+    draw_text(40, 132, line);
+    draw_text(40, 180, "PLEASE WAIT - RUNNING REAL GAME CODE");
+    pvr_list_finish();
+    pvr_scene_finish();
+}
+
 static void draw_scene_texture()
 {
     if (!scene_texture_ready) return;
@@ -853,15 +887,18 @@ static void draw_screen(const Results &r)
         snprintf(line, sizeof(line), "PPC OP:%08X MSR:%08X", r.real_boot_instruction, r.real_boot_msr);
         draw_text(40, 300, line);
     }
-    draw_text(40, 318, r.synthetic_fixture ?
-        (r.texture16 ? "SYNTHETIC REAL3D TEX 16-BIT: PASS" : "SYNTHETIC REAL3D TEX 16-BIT: FAIL") :
-        "SYNTHETIC REAL3D TEX 16-BIT: N/A");
-    draw_text(40, 336, r.synthetic_fixture ?
-        (r.texture8_low ? "SYNTHETIC REAL3D TEX 8-LOW: PASS" : "SYNTHETIC REAL3D TEX 8-LOW: FAIL") :
-        "SYNTHETIC REAL3D TEX 8-LOW: N/A");
-    draw_text(40, 354, r.synthetic_fixture ?
-        (r.texture8_high ? "SYNTHETIC REAL3D TEX 8-HIGH: PASS" : "SYNTHETIC REAL3D TEX 8-HIGH: FAIL") :
-        "SYNTHETIC REAL3D TEX 8-HIGH: N/A");
+    if (r.synthetic_fixture) {
+        draw_text(40, 318, r.texture16 ? "SYNTHETIC REAL3D TEX 16-BIT: PASS" : "SYNTHETIC REAL3D TEX 16-BIT: FAIL");
+        draw_text(40, 336, r.texture8_low ? "SYNTHETIC REAL3D TEX 8-LOW: PASS" : "SYNTHETIC REAL3D TEX 8-LOW: FAIL");
+        draw_text(40, 354, r.texture8_high ? "SYNTHETIC REAL3D TEX 8-HIGH: PASS" : "SYNTHETIC REAL3D TEX 8-HIGH: FAIL");
+    } else {
+        snprintf(line, sizeof(line), "PPC R3:%08X R4:%08X", r.real_boot_r3, r.real_boot_r4);
+        draw_text(40, 318, line);
+        snprintf(line, sizeof(line), "PPC NPC:%08X SRR1:%08X", r.real_boot_npc, r.real_boot_srr1);
+        draw_text(40, 336, line);
+        snprintf(line, sizeof(line), "PPC IRQ:%d DEC:%08X CR0:%X", r.real_boot_interrupt_pending, r.real_boot_dec, r.real_boot_cr0);
+        draw_text(40, 354, line);
+    }
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d NZ:%u MESH:%u VERT:%u",
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.real_vrom_nonzero),
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices));
@@ -901,13 +938,13 @@ int main()
 {
     pvr_init_defaults();
     pvr_set_bg_color(0.02f, 0.06f, 0.12f);
-    const Results results = run_integration();
     font_texture = pvr_mem_malloc(256 * 256 * 2);
     if (!font_texture) {
         printf("PVR font texture allocation failed\n");
         for (;;) thd_sleep(1000);
     }
     font_init();
+    const Results results = run_integration();
     if (results.pvr_texture_source) {
         scene_texture = pvr_mem_malloc(sizeof(results.pvr_texture_pixels));
         if (scene_texture) {
