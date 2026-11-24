@@ -40,6 +40,13 @@ const Profile VF3_REV_D = [] {
 // This probe mounts either the synthetic fixture or real Revision D ROM image,
 // initializes the Model3 board, and exercises the production storage/render paths.
 
+
+struct RenderTexture {
+    const video::Mesh *mesh = nullptr;
+    pvr_ptr_t texture = nullptr;
+    uint16_t width = 0, height = 0;
+};
+
 static const uint32_t expected_vrom_edge[8] = {
     0xE0010001u, 0xE0020002u, 0xE0030003u, 0x00000040u,
     0xD0010001u, 0xD0020002u, 0xD0030003u, 0xD0040004u
@@ -82,6 +89,9 @@ struct Results {
     bool full_scene = false;
     video::Meshes render_meshes;
     video::Scene render_scene;
+    std::vector<RenderTexture> render_textures;
+    uint32_t render_textures_ready = 0;
+    uint32_t render_textures_failed = 0;
     alignas(32) uint16_t pvr_texture_pixels[32 * 32] = {};
     bool pvr_texture_source = false;
     int mount_status = 0;
@@ -124,6 +134,75 @@ struct Results {
 };
 
 static void draw_boot_progress(uint32_t frame, uint32_t pc, uint64_t cycles);
+
+static uint16_t decode_real3d_texel(uint16_t value, int format)
+{
+    unsigned r = 0, g = 0, b = 0, a = 15;
+    auto grey = [&](unsigned n, unsigned alpha) { r = g = b = n; a = alpha; };
+    switch (format) {
+    case 0:
+        r = (value >> 10) & 31; g = (value >> 5) & 31; b = value & 31;
+        r = (r * 15 + 15) / 31; g = (g * 15 + 15) / 31; b = (b * 15 + 15) / 31;
+        a = (value & 0x8000) ? 0 : 15; break;
+    case 1: grey(value & 15, (value >> 4) & 15); break;
+    case 2: grey((value >> 4) & 15, value & 15); break;
+    case 3: grey((value >> 8) & 15, (value >> 12) & 15); break;
+    case 4: grey((value >> 12) & 15, (value >> 8) & 15); break;
+    case 5: { unsigned n = value & 255; grey((n * 15 + 127) / 255, n == 255 ? 0 : 15); break; }
+    case 6: { unsigned n = (value >> 8) & 255; grey((n * 15 + 127) / 255, n == 255 ? 0 : 15); break; }
+    case 7: r = (value >> 12) & 15; g = (value >> 8) & 15; b = (value >> 4) & 15; a = value & 15; break;
+    case 8: case 9: case 10: case 11: {
+        unsigned n = (value >> ((format - 8) * 4)) & 15;
+        grey(n, n == 15 ? 0 : 15); break;
+    }
+    default: a = 0; break;
+    }
+    return static_cast<uint16_t>((a << 12) | (r << 8) | (g << 4) | b);
+}
+
+static alignas(32) uint16_t real3d_texture_upload[256 * 256];
+
+static void prepare_real3d_textures(Results &r, const m3::Model3 &board)
+{
+    for (const video::Viewport &viewport : r.render_scene.viewports) {
+        for (const video::Model &model : viewport.models) {
+            if (!model.meshes) continue;
+            for (const video::Mesh &mesh : *model.meshes) {
+                if (!mesh.textured || mesh.width <= 0 || mesh.height <= 0) continue;
+                const int out_w = std::min(mesh.width, 256);
+                const int out_h = std::min(mesh.height, 256);
+                const int page = (mesh.page ^ model.page) & 1;
+                pvr_ptr_t texture = pvr_mem_malloc(out_w * out_h * 2);
+                if (!texture) { ++r.render_textures_failed; continue; }
+                for (int y = 0; y < out_h; ++y) {
+                    const int sy = (mesh.y + (y * mesh.height) / out_h) & 1023;
+                    for (int x = 0; x < out_w; ++x) {
+                        const int sx = (mesh.x + (x * mesh.width) / out_w) & 2047;
+                        const size_t at = size_t(page * 1024 + sy) * 2048 + sx;
+                        const uint16_t raw = at < board.tex_ram.size() ? board.tex_ram[at] : 0;
+                        real3d_texture_upload[y * out_w + x] = decode_real3d_texel(raw, mesh.format);
+                    }
+                }
+                pvr_txr_load(real3d_texture_upload, texture, out_w * out_h * 2);
+                r.render_textures.push_back({&mesh, texture, static_cast<uint16_t>(out_w), static_cast<uint16_t>(out_h)});
+                ++r.render_textures_ready;
+            }
+        }
+    }
+}
+
+static pvr_ptr_t real3d_texture_for(const Results &r, const video::Mesh &mesh,
+                                    uint16_t &width, uint16_t &height)
+{
+    for (const RenderTexture &entry : r.render_textures) {
+        if (entry.mesh == &mesh) {
+            width = entry.width; height = entry.height; return entry.texture;
+        }
+    }
+    width = height = 0;
+    return nullptr;
+}
+
 
 static Results run_integration()
 {
@@ -539,6 +618,7 @@ static Results run_integration()
         r.real_scene = r.real_scene_viewports != 0 &&
             r.real_scene_models != 0 && r.vertices != 0;
         r.pvr_scene = r.real_scene;
+        if (r.real_scene) prepare_real3d_textures(r, board);
     }
 
     const uint8_t *fixed = naomi_model3_crom_fixed();
@@ -822,12 +902,14 @@ static PvrRenderStats draw_scene_builder_output(const Results &r)
             for (const video::Mesh &mesh : *model.meshes) {
                 pvr_poly_cxt_t cxt;
                 pvr_poly_hdr_t header;
-                const bool textured = mesh.textured && scene_texture_ready &&
-                    mesh.width > 0 && mesh.height > 0;
+                uint16_t texture_width = 0, texture_height = 0;
+                const pvr_ptr_t real_texture = mesh.textured ?
+                    real3d_texture_for(r, mesh, texture_width, texture_height) : nullptr;
+                const bool textured = real_texture != nullptr;
                 if (textured) {
                     pvr_poly_cxt_txr(&cxt, PVR_LIST_OP_POLY,
-                        PVR_TXRFMT_RGB565 | PVR_TXRFMT_NONTWIDDLED,
-                        32, 32, scene_texture, PVR_FILTER_NONE);
+                        PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED,
+                        texture_width, texture_height, real_texture, PVR_FILTER_BILINEAR);
                 } else {
                     pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
                 }
@@ -998,9 +1080,11 @@ static void draw_screen(const Results &r)
     if (r.synthetic_fixture)
         draw_text(40, 462, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
     else {
-        snprintf(line, sizeof(line), "PVR XY:%.0f,%.0f-%.0f,%.0f OUT:%u",
+        snprintf(line, sizeof(line), "PVR XY:%.0f,%.0f-%.0f,%.0f OUT:%u TEX:%u/%u",
             pvr_stats.min_x, pvr_stats.min_y, pvr_stats.max_x, pvr_stats.max_y,
-            static_cast<unsigned>(pvr_stats.vertices_offscreen));
+            static_cast<unsigned>(pvr_stats.vertices_offscreen),
+            static_cast<unsigned>(r.render_textures_ready),
+            static_cast<unsigned>(r.render_textures_failed));
         draw_text(40, 462, line);
     }
     pvr_list_finish();
