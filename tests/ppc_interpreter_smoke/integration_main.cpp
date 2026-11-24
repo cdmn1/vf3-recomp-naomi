@@ -731,49 +731,52 @@ static void draw_screen(const Results &r)
     draw_text(40, 72, r.synthetic_fixture ?
         "SYNTHETIC ROM DATA - TEST FIXTURE" : "REAL VF3 REV D ROM PAYLOAD");
     draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
-    draw_text(40, 110, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
-    draw_text(40, 128, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
-    draw_text(40, 146, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
-    draw_text(40, 164, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
-    draw_text(40, 182, r.synthetic_fixture ?
+    draw_text(40, 120, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
+    draw_text(40, 138, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
+    draw_text(40, 156, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
+    draw_text(40, 174, r.power_ppc ? "SYNTHETIC PPC CORE SMOKE: PASS" : "SYNTHETIC PPC CORE SMOKE: FAIL");
+    draw_text(40, 192, r.synthetic_fixture ?
         (r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL") :
         (r.real_vrom ? "REAL VF3 VROM READ: PASS" : "REAL VF3 VROM READ: FAIL"));
-    draw_text(40, 200, r.synthetic_fixture ?
+    draw_text(40, 210, r.synthetic_fixture ?
         (r.vrom_edges ? "VROM PAGE/MIRROR/WRAP: PASS" : "VROM PAGE/MIRROR/WRAP: FAIL") :
         "VROM SYNTHETIC EDGE TESTS: N/A");
-    draw_text(40, 218, r.synthetic_fixture ?
+    draw_text(40, 228, r.synthetic_fixture ?
         (r.vrom_port ? "VROM TEXTURE PORT: PASS" : "VROM TEXTURE PORT: FAIL") :
         "VROM SYNTHETIC TEXTURE TEST: N/A");
-    draw_text(40, 236, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
-    draw_text(40, 254, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
-    draw_text(40, 272, r.synthetic_fixture ?
+    draw_text(40, 246, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
+    draw_text(40, 264, r.tile_bus ? "SYNTHETIC PPC TILE BUS: PASS" : "SYNTHETIC PPC TILE BUS: FAIL");
+    draw_text(40, 282, r.synthetic_fixture ?
         (r.scene ? "SCENEBUILDER GEOMETRY/ATTR/CACHE: PASS" : "SCENEBUILDER GEOMETRY/ATTR/CACHE: FAIL") :
         "SCENEBUILDER SYNTHETIC MODEL: N/A");
-    draw_text(40, 290, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
-    draw_text(40, 308, r.texture16 ? "SYNTHETIC REAL3D TEX 16-BIT: PASS" : "SYNTHETIC REAL3D TEX 16-BIT: FAIL");
-    draw_text(40, 326, r.texture8_low ? "SYNTHETIC REAL3D TEX 8-LOW: PASS" : "SYNTHETIC REAL3D TEX 8-LOW: FAIL");
-    draw_text(40, 344, r.texture8_high ? "SYNTHETIC REAL3D TEX 8-HIGH: PASS" : "SYNTHETIC REAL3D TEX 8-HIGH: FAIL");
+    draw_text(40, 300, r.real3d_bus ? "SYNTHETIC REAL3D REG/DMA: PASS" : "SYNTHETIC REAL3D REG/DMA: FAIL");
+    draw_text(40, 318, r.texture16 ? "SYNTHETIC REAL3D TEX 16-BIT: PASS" : "SYNTHETIC REAL3D TEX 16-BIT: FAIL");
+    draw_text(40, 336, r.texture8_low ? "SYNTHETIC REAL3D TEX 8-LOW: PASS" : "SYNTHETIC REAL3D TEX 8-LOW: FAIL");
+    draw_text(40, 354, r.texture8_high ? "SYNTHETIC REAL3D TEX 8-HIGH: PASS" : "SYNTHETIC REAL3D TEX 8-HIGH: FAIL");
     char line[64];
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d NZ:%u MESH:%u VERT:%u",
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.real_vrom_nonzero),
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices));
-    draw_text(40, 362, line);
+    draw_text(40, 372, line);
     snprintf(line, sizeof(line), "RAM:%u TILE:%u CULL:%u/%u",
         static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes),
         static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words));
-    draw_text(40, 380, line);
+    draw_text(40, 390, line);
     snprintf(line, sizeof(line), "POLY:%u FIFO:%u TEX:%u",
         static_cast<unsigned>(r.poly_words), static_cast<unsigned>(r.fifo_capacity),
         static_cast<unsigned>(r.tex_words));
-    draw_text(40, 398, line);
-    snprintf(line, sizeof(line), "SCENE G:%u C:%u A:%u",
-        r.scene_geometry ? 1u : 0u, r.scene_colour ? 1u : 0u,
-        r.scene_attributes ? 1u : 0u);
-    draw_text(40, 416, line);
-    draw_text(40, 434, r.synthetic_fixture ?
+    draw_text(40, 408, line);
+    if (r.synthetic_fixture)
+        snprintf(line, sizeof(line), "SCENE G:%u C:%u A:%u",
+            r.scene_geometry ? 1u : 0u, r.scene_colour ? 1u : 0u,
+            r.scene_attributes ? 1u : 0u);
+    else
+        snprintf(line, sizeof(line), "SCENE BUILD: N/A (GAME NOT RUNNING)");
+    draw_text(40, 426, line);
+    draw_text(40, 444, r.synthetic_fixture ?
         (r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL") :
         "SCENEBUILDER -> PVR2: N/A (NO GAME SCENE)");
-    draw_text(40, 452, r.synthetic_fixture ?
+    draw_text(40, 462, r.synthetic_fixture ?
         (scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL") :
         "SYNTHETIC TEXTURE UPLOAD: N/A");
     pvr_list_finish();
