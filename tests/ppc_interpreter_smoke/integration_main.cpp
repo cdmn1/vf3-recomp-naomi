@@ -168,28 +168,20 @@ static Results run_integration()
         program[9] = 0x92910008u; // stw r20, 8(r17) (start tile RAM DMA)
         program[10] = 0x3EA0F100u; // lis r21, 0xF100
         program[11] = 0x82D50004u; // lwz r22, 4(r21)
-        program[12] = 0x3E400401u; // lis r18, 0x0401 (bswap(0x104))
+        program[12] = 0x3E400401u; // lis r18, 0x0401 (bswap(0x104), culling source)
         program[13] = 0x92510000u; // stw r18, 0(r17)
         program[14] = 0x3A60008Cu; // addi r19, r0, 0x008C (bswap(0x8C000000))
         program[15] = 0x92710004u; // stw r19, 4(r17) (low culling RAM)
         program[16] = 0x92910008u; // stw r20, 8(r17) (start culling DMA)
-        program[17] = 0x3E400401u; // lis r18, 0x0401 (bswap(0x104))
+        program[17] = 0x3E400801u; // lis r18, 0x0801 (bswap(0x108), polygon source)
         program[18] = 0x92510000u; // stw r18, 0(r17)
         program[19] = 0x3A600098u; // addi r19, r0, 0x0098 (bswap(0x98000000))
         program[20] = 0x92710004u; // stw r19, 4(r17) (polygon RAM)
-        program[21] = 0x3E400001u; // lis r18, 1 (bswap(0x108))
-        program[22] = 0x92510000u; // stw r18, 0(r17)
-        program[23] = 0x92910008u; // stw r20, 8(r17) (start polygon DMA)
-        // Correct the third DMA source to 0x108 before starting it.
-        program[22] = 0x3E400001u; // lis r18, 1 (bswap(0x100)); patched below
-        program[23] = 0x92510000u; // stw r18, 0(r17)
-        program[24] = 0x3E400001u; // lis r18, 1 (placeholder)
-        program[25] = 0x92510000u; // stw r18, 0(r17)
-        program[26] = 0x92910008u; // stw r20, 8(r17)
+        program[21] = 0x92910008u; // stw r20, 8(r17) (start polygon DMA)
         board.cpu.s.pc = 0;
         board.cpu.s.npc = 0;
-        const int real3d_executed = board.cpu.execute(27);
-        r.real3d_bus = real3d_executed == 27 &&
+        const int real3d_executed = board.cpu.execute(22);
+        r.real3d_bus = real3d_executed == 22 &&
                        board.cpu.s.r[16] == 0xFFFFFFFDu &&
                        board.cpu.s.r[22] == dma_source_word &&
                        board.cull_lo[0] == bswap32(cull_source_word) &&
