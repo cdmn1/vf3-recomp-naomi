@@ -13,6 +13,8 @@ on:
       - "tools/naomi/test_cart_image_format.py"
       - "tools/naomi/make_vrom_integration_image.py"
       - "tools/naomi/test_make_vrom_integration_image.py"
+      - "tools/naomi/pack_vf3_roms.py"
+      - "tools/naomi/test_pack_vf3_roms.py"
       - "VERSION"
       - ".github/workflows/naomi-ppc-interpreter.yml"
   workflow_dispatch:
@@ -313,6 +315,7 @@ jobs:
       # Download, verify and package user-supplied VF3 Revision D ROMs; guarded by pack_real_vf3
       # [pack-real-vf3] Force a verified rebuild of the corrected in-place real-ROM payload.
       # [pack-real-vf3] Build the real-ROM image using the fixed runtime payload slot.
+      # [pack-real-vf3] Package real ROMs by replacing the fixed-offset synthetic fixture.
       - name: Download, verify and package user-supplied VF3 Revision D ROMs
         if: (github.event_name == 'workflow_dispatch' && inputs.pack_real_vf3) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[pack-real-vf3]'))
         env:
