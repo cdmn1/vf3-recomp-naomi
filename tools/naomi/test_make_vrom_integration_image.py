@@ -56,10 +56,15 @@ class SyntheticImageTests(unittest.TestCase):
                 stream.seek(vrom_offset + IMAGE.VROM_EDGE_WORD_ADDRESS * 4)
                 self.assertEqual(stream.read(len(IMAGE.VROM_EDGE_BYTES)), IMAGE.VROM_EDGE_BYTES)
 
-    def test_model_is_a_terminated_single_triangle(self):
-        self.assertEqual(len(IMAGE.MODEL_WORDS), 19)
-        self.assertEqual(IMAGE.MODEL_WORDS[1] & 4, 4)
+    def test_model_contains_two_independent_terminated_polygons(self):
+        self.assertEqual(len(IMAGE.MODEL_WORDS), 38)
+        # First polygon is non-terminal; second polygon carries the final marker.
+        self.assertEqual(IMAGE.MODEL_WORDS[1] & 4, 0)
+        self.assertEqual(IMAGE.MODEL_WORDS[20] & 4, 4)
         self.assertNotEqual(IMAGE.MODEL_WORDS[6], 0)
+        self.assertNotEqual(IMAGE.MODEL_WORDS[25], IMAGE.MODEL_WORDS[6])
+        self.assertEqual(IMAGE.MODEL_WORDS[4], 0xFFFFFFFF)
+        self.assertEqual(IMAGE.MODEL_WORDS[23], 0xFF0000FF)
 
 
 if __name__ == "__main__":
