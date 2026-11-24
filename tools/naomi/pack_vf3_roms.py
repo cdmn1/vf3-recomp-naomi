@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pack a verified VF3 Revision D ROM ZIP behind a Naomi executable image.
+"""Replace the synthetic VF3NROM fixture in a Naomi image with verified VF3 Revision D ROM data.
 
 No game data is included. The input ZIP must be supplied by the user.
 """
@@ -139,14 +139,28 @@ def pack(executable: Path, zip_path: Path, output: Path,
     if payload_offset < 0 or payload_offset % ALIGNMENT:
         raise PackError("Payload offset must be non-negative and 32-byte aligned")
     if output.resolve() in (executable.resolve(), zip_path.resolve()):
-        raise PackError("Output must not overwrite the executable or input ZIP")
-    profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
-    executable_size = executable.stat().st_size
-    if executable_size > payload_offset:
+        raise PackError("Output must not overwrite the input image or ROM ZIP")
+
+    # The integration .bin already contains a synthetic VF3NROM payload at
+    # the fixed runtime offset. Replace that payload in place: appending a
+    # second header after the full 120 MiB image leaves the Naomi runtime
+    # reading the old synthetic fixture.
+    with executable.open("rb") as source:
+        source.seek(payload_offset)
+        base_header = source.read(HEADER_SIZE)
+    if len(base_header) != HEADER_SIZE or base_header[:8] != MAGIC:
         raise PackError(
-            f"Executable is {executable_size} bytes, larger than reserved "
-            f"payload offset {payload_offset}; choose a higher aligned offset"
+            f"Input image has no VF3NROM payload slot at 0x{payload_offset:08x}"
         )
+    version, header_size, profile_id = struct.unpack_from("<III", base_header, 8)
+    stored_crc = struct.unpack_from("<I", base_header, 28)[0]
+    check_header = bytearray(base_header)
+    struct.pack_into("<I", check_header, 28, 0)
+    if (version != VERSION or header_size != HEADER_SIZE or
+            profile_id != 1 or (zlib.crc32(check_header) & 0xFFFFFFFF) != stored_crc):
+        raise PackError("Input VF3NROM payload slot has an invalid header")
+
+    profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
     regions_data = load_verified_roms(zip_path, profile)
     data_offset = payload_offset + HEADER_SIZE
     descriptors = []
@@ -166,18 +180,19 @@ def pack(executable: Path, zip_path: Path, output: Path,
     header = make_header(int(profile["profile_id"]), payload_size, descriptors)
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    with executable.open("rb") as source, output.open("wb") as target:
-        shutil.copyfileobj(source, target, 1024 * 1024)
-        target.write(b"\xFF" * (payload_offset - executable_size))
+    shutil.copyfile(executable, output)
+    with output.open("r+b") as target:
+        target.seek(payload_offset)
         target.write(header)
-        for name in REGIONS:
+        for name, region in REGIONS.items():
+            target.seek(manifest_regions[list(REGIONS).index(name)]["offset"])
             target.write(regions_data[name])
         target.truncate(current)
 
     manifest = {
         "format": "VF3NROM", "version": VERSION,
         "profile": profile["profile"], "title": profile["title"],
-        "executable": str(executable), "executable_size": executable_size,
+        "base_image": str(executable), "base_image_size": executable.stat().st_size,
         "source_zip_sha256": sha256_file(zip_path),
         "payload_offset": payload_offset, "payload_size": payload_size,
         "image_size": current, "regions": manifest_regions,
@@ -191,10 +206,9 @@ def pack(executable: Path, zip_path: Path, output: Path,
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
 
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("executable", type=Path, help="built Naomi .bin executable")
+    parser.add_argument("executable", type=Path, help="synthetic Naomi integration .bin containing a VF3NROM payload slot")
     parser.add_argument("rom_zip", type=Path, help="user-supplied VF3 Revision D ROM ZIP")
     parser.add_argument("output", type=Path, help="combined NetDIMM image to create")
     parser.add_argument("--payload-offset", type=lambda x: int(x, 0),
