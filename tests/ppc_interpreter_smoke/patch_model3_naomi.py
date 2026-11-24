@@ -578,7 +578,7 @@ scene_method = """#ifdef VF3_NAOMI
 // constructing the full Model3 board. The caller supplies the board's polygon
 // RAM address range; VROM model data is fetched through the production bridge.
 bool SceneBuilder::naomi_test_vrom_model(
-    uint32_t addr, const uint32_t *polygon_ram,
+    uint32_t addr, const uint32_t *polygon_ram, Meshes *mesh_output,
     size_t *mesh_count, size_t *vertex_count,
     bool *geometry_valid, bool *colour_valid, bool *attributes_valid)
 {
@@ -594,6 +594,9 @@ bool SceneBuilder::naomi_test_vrom_model(
     hidden_marker[0] = hidden_marker[1] = 0;
     draw_model(addr);
     vp = nullptr;
+    if (mesh_output) {
+        *mesh_output = test_viewport.models.empty() ? Meshes{} : test_viewport.models[0].meshes;
+    }
     size_t meshes = 0, vertices = 0;
     std::vector<const Mesh *> parsed_meshes;
     for (const Model &model : test_viewport.models) {
@@ -675,7 +678,7 @@ scene_header = scene_header_path.read_text()
 test_decl = "\tsize_t cached() const { return rom_cache.size(); }"
 test_decl_naomi = test_decl + """
 #ifdef VF3_NAOMI
-\tbool naomi_test_vrom_model(uint32_t addr, const uint32_t *polygon_ram,
+\tbool naomi_test_vrom_model(uint32_t addr, const uint32_t *polygon_ram, Meshes *mesh_output,
 \t                           size_t *mesh_count, size_t *vertex_count,\n\t                           bool *geometry_valid, bool *colour_valid,\n\t                           bool *attributes_valid);
 #endif"""
 if test_decl_naomi not in scene_header:

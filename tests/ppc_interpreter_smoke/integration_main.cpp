@@ -73,6 +73,8 @@ struct Results {
     bool scene_geometry = false;
     bool scene_colour = false;
     bool scene_attributes = false;
+    bool pvr_scene = false;
+    video::Meshes render_meshes;
     int mount_status = 0;
     int vrom_status = 0;
     size_t meshes = 0;
@@ -440,18 +442,21 @@ static Results run_integration()
     if (r.vrom && board.poly_ram.size() == 0x400000u / 4u) {
         video::SceneBuilder builder;
         const bool first = builder.naomi_test_vrom_model(
-            0x00100000u, board.poly_ram.data(), &r.meshes, &r.vertices,
+            0x00100000u, board.poly_ram.data(), &r.render_meshes, &r.meshes, &r.vertices,
             &r.scene_geometry, &r.scene_colour, &r.scene_attributes);
         const size_t cache_after_first = builder.cached();
         size_t second_meshes = 0, second_vertices = 0;
         const bool second = builder.naomi_test_vrom_model(
-            0x00100000u, board.poly_ram.data(), &second_meshes, &second_vertices,
+            0x00100000u, board.poly_ram.data(), nullptr, &second_meshes, &second_vertices,
             nullptr, nullptr, nullptr);
         r.cached = builder.cached();
         r.scene = first && second && r.meshes == 2 && r.vertices == 6 &&
                   second_meshes == r.meshes && second_vertices == r.vertices &&
                   cache_after_first == 1 && r.cached == 1 &&
                   r.scene_geometry && r.scene_colour && r.scene_attributes;
+        r.pvr_scene = r.render_meshes && r.render_meshes->size() == 2 &&
+            (*r.render_meshes)[0].verts.size() == 3 &&
+            (*r.render_meshes)[1].verts.size() == 3;
     }
     return r;
 }
@@ -505,10 +510,43 @@ static void draw_text(float x, float y, const char *s)
     }
 }
 
+static void draw_scene_meshes(const Results &r)
+{
+    if (!r.render_meshes) return;
+    pvr_poly_cxt_t cxt;
+    pvr_poly_hdr_t header;
+    pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
+    cxt.gen.culling = PVR_CULLING_NONE;
+    pvr_poly_compile(&header, &cxt);
+    pvr_prim(&header, sizeof(header));
+    for (size_t m = 0; m < r.render_meshes->size(); ++m) {
+        const video::Mesh &mesh = (*r.render_meshes)[m];
+        if (mesh.verts.size() != 3) continue;
+        for (size_t i = 0; i < 3; ++i) {
+            const video::Vertex &source = mesh.verts[i];
+            pvr_vertex_t vertex{};
+            vertex.flags = i == 2 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
+            vertex.x = 470.0f + source.pos[0] * 32.0f;
+            vertex.y = 145.0f + source.pos[1] * 32.0f;
+            vertex.z = 1.0f;
+            vertex.u = 0.0f;
+            vertex.v = 0.0f;
+            vertex.argb = PVR_PACK_COLOR(
+                source.colour[3] / 255.0f, source.colour[0] / 255.0f,
+                source.colour[1] / 255.0f, source.colour[2] / 255.0f);
+            vertex.oargb = 0;
+            pvr_prim(&vertex, sizeof(vertex));
+        }
+    }
+}
+
 static void draw_screen(const Results &r)
 {
     pvr_wait_ready();
     pvr_scene_begin();
+    pvr_list_begin(PVR_LIST_OP_POLY);
+    draw_scene_meshes(r);
+    pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
     draw_text(40, 48, "VF3 NAOMI - MODEL3 INTEGRATION");
     draw_text(40, 72, "SYNTHETIC ROM DATA - NO GAME ASSETS");
@@ -531,19 +569,20 @@ static void draw_screen(const Results &r)
     snprintf(line, sizeof(line), "MOUNT:%d VROM:%d MESH:%u VERT:%u CACHE:%u",
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.meshes),
         static_cast<unsigned>(r.vertices), static_cast<unsigned>(r.cached));
-    draw_text(40, 392, line);
+    draw_text(40, 374, line);
     snprintf(line, sizeof(line), "RAM:%u TILE:%u CULL:%u/%u",
         static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes),
         static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words));
-    draw_text(40, 410, line);
+    draw_text(40, 392, line);
     snprintf(line, sizeof(line), "POLY:%u FIFO:%u TEX:%u",
         static_cast<unsigned>(r.poly_words), static_cast<unsigned>(r.fifo_capacity),
         static_cast<unsigned>(r.tex_words));
-    draw_text(40, 428, line);
+    draw_text(40, 410, line);
     snprintf(line, sizeof(line), "SCENE G:%u C:%u A:%u",
         r.scene_geometry ? 1u : 0u, r.scene_colour ? 1u : 0u,
         r.scene_attributes ? 1u : 0u);
-    draw_text(40, 446, line);
+    draw_text(40, 428, line);
+    draw_text(40, 446, r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL");
     pvr_list_finish();
     pvr_scene_finish();
 }
