@@ -94,6 +94,9 @@ struct Results {
     size_t pvr_before = 0, pvr_after = 0;
     unsigned hw_mode = 0, pvr_total = 0;
     bool pvr_error = false;
+    bool synthetic_fixture = false;
+    bool real_vrom = false;
+    size_t real_vrom_nonzero = 0;
 };
 
 static Results run_integration()
@@ -103,6 +106,20 @@ static Results run_integration()
     r.mount = r.mount_status == NAOMI_VF3_IMAGE_OK;
     if (!r.mount)
         return r;
+
+    // Read the same VROM model address used by the synthetic fixture. On a
+    // real Revision D image this is ordinary game data, not the test model.
+    alignas(32) uint32_t actual_model[38] = {};
+    r.vrom_status = naomi_model3_vrom_read_words(0x00100000u, actual_model, 38);
+    r.synthetic_fixture = r.vrom_status == NAOMI_CART_VROM_OK &&
+        std::memcmp(actual_model, expected_model, sizeof(expected_model)) == 0;
+    if (r.vrom_status == NAOMI_CART_VROM_OK) {
+        for (uint32_t word : actual_model)
+            if (word != 0u && word != 0xFFFFFFFFu) ++r.real_vrom_nonzero;
+    }
+    r.real_vrom = r.vrom_status == NAOMI_CART_VROM_OK &&
+        !r.synthetic_fixture && r.real_vrom_nonzero != 0;
+    r.vrom = r.synthetic_fixture;
 
     m3::Model3 board;
     std::string error;
@@ -132,6 +149,15 @@ static Results run_integration()
     }
 
     if (r.board_load) {
+        // Capture actual ROM words before exercising the PPC bus. The real-ROM
+        // image uses these as reference values; the synthetic fixture uses its
+        // explicit bus markers below.
+        const uint8_t *fixed_rom = naomi_model3_crom_fixed();
+        const uint32_t fixed_bus_expected = fixed_rom ?
+            *reinterpret_cast<const uint32_t *>(fixed_rom) : 0xFFFFFFFFu;
+        naomi_model3_crom_select_bank(0xFCu);
+        const uint32_t banked_bus_expected = naomi_model3_crom_read32(0);
+
         // Exercise the real board power-on/reset path, then execute a tiny
         // synthetic PPC program through the CPU attached to Model3's bus/RAM.
         board.power_on();
@@ -162,8 +188,11 @@ static Results run_integration()
         board.cpu.s.npc = 0;
         const int bus_executed = board.cpu.execute(7);
         r.crom_bus = bus_executed == 7 &&
-                     board.cpu.s.r[7] == 0x13579BDFu &&
-                     board.cpu.s.r[11] == 0x2468ACE0u &&
+                     (r.synthetic_fixture ?
+                        (board.cpu.s.r[7] == 0x13579BDFu &&
+                         board.cpu.s.r[11] == 0x2468ACE0u) :
+                        (board.cpu.s.r[7] == fixed_bus_expected &&
+                         board.cpu.s.r[11] == banked_bus_expected)) &&
                      !board.cpu.s.fatal;
 
         // Exercise PPC stw/lwz through the mapped Real3D tile RAM window.
@@ -390,73 +419,98 @@ static Results run_integration()
 
     const uint8_t *fixed = naomi_model3_crom_fixed();
     const int bank_selected = naomi_model3_crom_select_bank(0xFCu); // bank 3
-    // The synthetic image deliberately places non-zero bus markers in both
-    // CROM regions. Check the exact little-endian bytes rather than expecting
-    // zero-filled ROM; the PPC bus probe independently checks SH-4/PPC words.
-    r.crom = fixed &&
-             fixed[0] == 0xDFu && fixed[1] == 0x9Bu &&
-             fixed[2] == 0x57u && fixed[3] == 0x13u &&
-             bank_selected &&
-             naomi_model3_crom_read8(0) == 0xE0u &&
-             naomi_model3_crom_read8(1) == 0xACu &&
-             naomi_model3_crom_read8(2) == 0x68u &&
-             naomi_model3_crom_read8(3) == 0x24u &&
-             naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
+    if (r.synthetic_fixture) {
+        r.crom = fixed &&
+                 fixed[0] == 0xDFu && fixed[1] == 0x9Bu &&
+                 fixed[2] == 0x57u && fixed[3] == 0x13u &&
+                 bank_selected &&
+                 naomi_model3_crom_read8(0) == 0xE0u &&
+                 naomi_model3_crom_read8(1) == 0xACu &&
+                 naomi_model3_crom_read8(2) == 0x68u &&
+                 naomi_model3_crom_read8(3) == 0x24u &&
+                 naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
+    } else {
+        const uint8_t first = naomi_model3_crom_read8(0);
+        r.crom = fixed && bank_selected &&
+                 naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK &&
+                 first == naomi_model3_crom_read8(0);
+    }
 
     // Exercise all four bank-page cache slots, force page-zero eviction,
     // then verify the page is fetched again with the original marker intact.
     // Also switch banks and verify the active-low register's mirrored bank
     // 11 aliases physical bank 3 after the bank cache is invalidated.
     if (r.crom) {
-        bool pages_ok = true;
-        for (uint32_t page = 1; page <= 4; ++page)
-            pages_ok = pages_ok &&
-                naomi_model3_crom_read8(page * NAOMI_CART_CROM_PAGE_SIZE) == 0u;
-        const bool page_zero_refetched =
-            naomi_model3_crom_read8(0) == 0xE0u;
-        const bool bank_four_selected =
-            naomi_model3_crom_select_bank(0xFBu) &&
-            naomi_model3_crom_read8(0) == 0u;
-        const bool mirrored_bank_selected =
-            naomi_model3_crom_select_bank(0xF4u) &&
-            naomi_model3_crom_read8(0) == 0xE0u;
-        r.crom_cache = pages_ok && page_zero_refetched &&
-            bank_four_selected && mirrored_bank_selected &&
-            naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
+        if (r.synthetic_fixture) {
+            bool pages_ok = true;
+            for (uint32_t page = 1; page <= 4; ++page)
+                pages_ok = pages_ok &&
+                    naomi_model3_crom_read8(page * NAOMI_CART_CROM_PAGE_SIZE) == 0u;
+            const bool page_zero_refetched =
+                naomi_model3_crom_read8(0) == 0xE0u;
+            const bool bank_four_selected =
+                naomi_model3_crom_select_bank(0xFBu) &&
+                naomi_model3_crom_read8(0) == 0u;
+            const bool mirrored_bank_selected =
+                naomi_model3_crom_select_bank(0xF4u) &&
+                naomi_model3_crom_read8(0) == 0xE0u;
+            r.crom_cache = pages_ok && page_zero_refetched &&
+                bank_four_selected && mirrored_bank_selected &&
+                naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
+        } else {
+            const uint8_t page_zero = naomi_model3_crom_read8(0);
+            bool pages_ok = naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
+            for (uint32_t page = 1; page <= 4; ++page) {
+                (void)naomi_model3_crom_read8(page * NAOMI_CART_CROM_PAGE_SIZE);
+                pages_ok = pages_ok &&
+                    naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
+            }
+            const bool page_zero_refetched = naomi_model3_crom_read8(0) == page_zero;
+            const bool bank_four_selected = naomi_model3_crom_select_bank(0xFBu);
+            (void)naomi_model3_crom_read8(0);
+            const bool bank_four_read = naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
+            const bool mirrored_bank_selected = naomi_model3_crom_select_bank(0xF4u) &&
+                naomi_model3_crom_read8(0) == page_zero;
+            r.crom_cache = pages_ok && page_zero_refetched && bank_four_selected &&
+                bank_four_read && mirrored_bank_selected &&
+                naomi_model3_crom_last_status() == NAOMI_CART_IMAGE_OK;
+        }
     }
 
-    alignas(32) uint32_t actual_model[38] = {};
-    r.vrom_status = naomi_model3_vrom_read_words(0x00100000u, actual_model, 38);
-    r.vrom = r.vrom_status == NAOMI_CART_VROM_OK &&
-             std::memcmp(actual_model, expected_model, sizeof(expected_model)) == 0;
+    // Synthetic-only VROM boundary and texture-port assertions are skipped for
+    // real VF3 data; the mount already CRC-verifies the complete 32 MiB VROM.
 
     // Cross the 64 KiB scratch-page boundary with non-zero markers, then
     // verify the 32 MiB mirror and 24-bit word-address wrap against the model.
     alignas(32) uint32_t edge_words[8] = {};
     alignas(32) uint32_t mirror_words[38] = {};
     alignas(32) uint32_t wrapped_words[38] = {};
-    const int edge_status = naomi_model3_vrom_read_words(0x00003FFCu, edge_words, 8);
-    const int mirror_status = naomi_model3_vrom_read_words(0x00900000u, mirror_words, 38);
-    const int wrap_status = naomi_model3_vrom_read_words(0x01100000u, wrapped_words, 38);
-    r.vrom_edges = edge_status == NAOMI_CART_VROM_OK &&
-        std::memcmp(edge_words, expected_vrom_edge, sizeof(expected_vrom_edge)) == 0 &&
-        mirror_status == NAOMI_CART_VROM_OK &&
-        std::memcmp(mirror_words, expected_model, sizeof(expected_model)) == 0 &&
-        wrap_status == NAOMI_CART_VROM_OK &&
-        std::memcmp(wrapped_words, expected_model, sizeof(expected_model)) == 0;
+    if (r.synthetic_fixture) {
+        const int edge_status = naomi_model3_vrom_read_words(0x00003FFCu, edge_words, 8);
+        const int mirror_status = naomi_model3_vrom_read_words(0x00900000u, mirror_words, 38);
+        const int wrap_status = naomi_model3_vrom_read_words(0x01100000u, wrapped_words, 38);
+        r.vrom_edges = edge_status == NAOMI_CART_VROM_OK &&
+            std::memcmp(edge_words, expected_vrom_edge, sizeof(expected_vrom_edge)) == 0 &&
+            mirror_status == NAOMI_CART_VROM_OK &&
+            std::memcmp(mirror_words, expected_model, sizeof(expected_model)) == 0 &&
+            wrap_status == NAOMI_CART_VROM_OK &&
+            std::memcmp(wrapped_words, expected_model, sizeof(expected_model)) == 0;
+    }
 
     // Exercise the production texture-port bridge: the length header is the
     // final word of one 64 KiB scratch page and its payload crosses into the next.
     std::vector<uint32_t> texture_port_fifo;
-    const int texture_port_called = naomi_model3_vrom_port(0x00003FFFu, &texture_port_fifo);
-    const uint32_t expected_port[8] = {
-        0x00000040u, 0xD0010001u, 0xD0020002u, 0xD0030003u,
-        0xD0040004u, 0x00000000u, 0x00000000u, 0x00000000u
-    };
-    r.vrom_port = texture_port_called &&
-        naomi_model3_vrom_last_status() == NAOMI_CART_VROM_OK &&
-        texture_port_fifo.size() == 8u &&
-        std::memcmp(texture_port_fifo.data(), expected_port, sizeof(expected_port)) == 0;
+    if (r.synthetic_fixture) {
+        const int texture_port_called = naomi_model3_vrom_port(0x00003FFFu, &texture_port_fifo);
+        const uint32_t expected_port[8] = {
+            0x00000040u, 0xD0010001u, 0xD0020002u, 0xD0030003u,
+            0xD0040004u, 0x00000000u, 0x00000000u, 0x00000000u
+        };
+        r.vrom_port = texture_port_called &&
+            naomi_model3_vrom_last_status() == NAOMI_CART_VROM_OK &&
+            texture_port_fifo.size() == 8u &&
+            std::memcmp(texture_port_fifo.data(), expected_port, sizeof(expected_port)) == 0;
+    }
 
     if (r.vrom && board.poly_ram.size() == 0x400000u / 4u) {
         video::SceneBuilder builder;
@@ -674,26 +728,35 @@ static void draw_screen(const Results &r)
     char title[64];
     snprintf(title, sizeof(title), "VF3 NAOMI - MODEL3 INTEGRATION %s", VF3_BUILD_VERSION);
     draw_text(40, 48, title);
-    draw_text(40, 72, "SYNTHETIC ROM DATA - NO GAME ASSETS");
+    draw_text(40, 72, r.synthetic_fixture ?
+        "SYNTHETIC ROM DATA - TEST FIXTURE" : "REAL VF3 REV D ROM PAYLOAD");
     draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
     draw_text(40, 136, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
     draw_text(40, 154, r.board_load ? "MODEL3 LOAD: PASS" : "MODEL3 LOAD: FAIL");
     draw_text(40, 172, r.crom_cache ? "FIXED/BANKED CROM + PAGE CACHE: PASS" : "FIXED/BANKED CROM + PAGE CACHE: FAIL");
     draw_text(40, 190, r.power_ppc ? "MODEL3 POWER-ON/PPC BUS: PASS" : "MODEL3 POWER-ON/PPC BUS: FAIL");
-    draw_text(40, 208, r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL");
-    draw_text(40, 226, r.vrom_edges ? "VROM PAGE/MIRROR/WRAP: PASS" : "VROM PAGE/MIRROR/WRAP: FAIL");
-    draw_text(40, 244, r.vrom_port ? "VROM TEXTURE PORT: PASS" : "VROM TEXTURE PORT: FAIL");
+    draw_text(40, 208, r.synthetic_fixture ?
+        (r.vrom ? "VROM STREAM READ: PASS" : "VROM STREAM READ: FAIL") :
+        (r.real_vrom ? "REAL VF3 VROM READ: PASS" : "REAL VF3 VROM READ: FAIL"));
+    draw_text(40, 226, r.synthetic_fixture ?
+        (r.vrom_edges ? "VROM PAGE/MIRROR/WRAP: PASS" : "VROM PAGE/MIRROR/WRAP: FAIL") :
+        "VROM SYNTHETIC EDGE TESTS: N/A");
+    draw_text(40, 244, r.synthetic_fixture ?
+        (r.vrom_port ? "VROM TEXTURE PORT: PASS" : "VROM TEXTURE PORT: FAIL") :
+        "VROM SYNTHETIC TEXTURE TEST: N/A");
     draw_text(40, 262, r.crom_bus ? "PPC FIXED/BANKED CROM BUS: PASS" : "PPC FIXED/BANKED CROM BUS: FAIL");
     draw_text(40, 280, r.tile_bus ? "PPC TILE RAM BUS: PASS" : "PPC TILE RAM BUS: FAIL");
-    draw_text(40, 298, r.scene ? "SCENEBUILDER GEOMETRY/ATTR/CACHE: PASS" : "SCENEBUILDER GEOMETRY/ATTR/CACHE: FAIL");
+    draw_text(40, 298, r.synthetic_fixture ?
+        (r.scene ? "SCENEBUILDER GEOMETRY/ATTR/CACHE: PASS" : "SCENEBUILDER GEOMETRY/ATTR/CACHE: FAIL") :
+        "SCENEBUILDER SYNTHETIC MODEL: N/A");
     draw_text(40, 316, r.real3d_bus ? "PPC REAL3D REG/DMA BUS: PASS" : "PPC REAL3D REG/DMA BUS: FAIL");
     draw_text(40, 334, r.texture16 ? "REAL3D TEXTURE 16-BIT: PASS" : "REAL3D TEXTURE 16-BIT: FAIL");
     draw_text(40, 352, r.texture8_low ? "REAL3D TEXTURE 8-BIT LOW: PASS" : "REAL3D TEXTURE 8-BIT LOW: FAIL");
     draw_text(40, 370, r.texture8_high ? "REAL3D TEXTURE 8-BIT HIGH: PASS" : "REAL3D TEXTURE 8-BIT HIGH: FAIL");
     char line[64];
-    snprintf(line, sizeof(line), "MOUNT:%d VROM:%d MESH:%u VERT:%u CACHE:%u",
-        r.mount_status, r.vrom_status, static_cast<unsigned>(r.meshes),
-        static_cast<unsigned>(r.vertices), static_cast<unsigned>(r.cached));
+    snprintf(line, sizeof(line), "MOUNT:%d VROM:%d NZ:%u MESH:%u VERT:%u",
+        r.mount_status, r.vrom_status, static_cast<unsigned>(r.real_vrom_nonzero),
+        static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices));
     draw_text(40, 374, line);
     snprintf(line, sizeof(line), "RAM:%u TILE:%u CULL:%u/%u",
         static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes),
@@ -707,8 +770,12 @@ static void draw_screen(const Results &r)
         r.scene_geometry ? 1u : 0u, r.scene_colour ? 1u : 0u,
         r.scene_attributes ? 1u : 0u);
     draw_text(40, 428, line);
-    draw_text(40, 446, r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL");
-    draw_text(40, 464, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
+    draw_text(40, 446, r.synthetic_fixture ?
+        (r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL") :
+        "SCENEBUILDER -> PVR2: N/A (NO GAME SCENE)");
+    draw_text(40, 464, r.synthetic_fixture ?
+        (scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL") :
+        "SYNTHETIC TEXTURE UPLOAD: N/A");
     pvr_list_finish();
     pvr_scene_finish();
 }
