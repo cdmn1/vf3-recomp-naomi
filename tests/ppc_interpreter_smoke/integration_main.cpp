@@ -1326,7 +1326,7 @@ int main()
     unsigned frame = 0;
     for (;;) {
         const size_t selected_mesh = (frame / 180u) % 9u;
-        const unsigned diagnostic_page = (frame / 90u) % 3u;
+        const unsigned diagnostic_page = (frame / 60u) % 3u;
         draw_screen(results, selected_mesh, diagnostic_page);
         ++frame;
         thd_sleep(16);
