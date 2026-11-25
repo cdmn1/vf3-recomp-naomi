@@ -1137,7 +1137,7 @@ static void draw_screen(const Results &r)
             static_cast<unsigned>(r.texture_alpha_opaque),
             static_cast<unsigned>(r.texture_rgb_unique),
             pvr_stats.min_depth, pvr_stats.max_depth);
-        draw_text(40, 480, line);
+        draw_text(40, 426, line);
     }
     pvr_list_finish();
     pvr_scene_finish();
