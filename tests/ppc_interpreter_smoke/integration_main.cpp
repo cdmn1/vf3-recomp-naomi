@@ -42,6 +42,7 @@ const Profile VF3_REV_D = [] {
 
 
 // v228 isolates real VF3 geometry from all source material/texture state.
+// v230: capture source-space, model-space and projected coordinates for each isolated real mesh.
 static constexpr bool kForceSolidWhiteDiagnostic = true;
 
 struct RenderTexture {
