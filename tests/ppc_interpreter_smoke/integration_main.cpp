@@ -1023,6 +1023,23 @@ static void draw_pvr_control_triangle()
     v.argb = 0xFF20FF20u; pvr_prim(&v, sizeof(v));
 }
 
+static void draw_pvr_translucent_control_triangle()
+{
+    pvr_poly_cxt_t cxt;
+    pvr_poly_hdr_t header;
+    pvr_poly_cxt_col(&cxt, PVR_LIST_TR_POLY);
+    cxt.gen.culling = PVR_CULLING_NONE;
+    pvr_poly_compile(&header, &cxt);
+    pvr_prim(&header, sizeof(header));
+    pvr_vertex_t v{};
+    v.flags = PVR_CMD_VERTEX; v.x = 570.0f; v.y = 292.0f; v.z = 1.0f;
+    v.argb = 0xFFFF2020u; pvr_prim(&v, sizeof(v));
+    v.flags = PVR_CMD_VERTEX; v.x = 630.0f; v.y = 292.0f; v.z = 1.0f;
+    v.argb = 0xFFFF2020u; pvr_prim(&v, sizeof(v));
+    v.flags = PVR_CMD_VERTEX_EOL; v.x = 600.0f; v.y = 352.0f; v.z = 1.0f;
+    v.argb = 0xFFFF2020u; pvr_prim(&v, sizeof(v));
+}
+
 static void draw_screen(const Results &r)
 {
     pvr_wait_ready();
@@ -1032,6 +1049,7 @@ static void draw_screen(const Results &r)
     draw_pvr_control_triangle();
     pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
+    draw_pvr_translucent_control_triangle();
     char title[64];
     char line[64];
     snprintf(title, sizeof(title), "VF3 NAOMI - MODEL3 INTEGRATION %s", VF3_BUILD_VERSION);
