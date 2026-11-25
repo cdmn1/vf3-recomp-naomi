@@ -911,13 +911,16 @@ struct PvrRenderStats {
     float min_depth = 1.0e9f, max_depth = -1.0e9f;
 };
 
-static PvrRenderStats draw_scene_builder_output(const Results &r)
+static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selected_mesh)
 {
     PvrRenderStats stats{};
+    size_t mesh_index = 0;
     for (const video::Viewport &viewport : r.render_scene.viewports) {
         for (const video::Model &model : viewport.models) {
             if (!model.meshes) continue;
             for (const video::Mesh &mesh : *model.meshes) {
+                const size_t this_mesh = mesh_index++;
+                if (this_mesh != selected_mesh) continue;
                 pvr_poly_cxt_t cxt;
                 pvr_poly_hdr_t header;
                 uint16_t texture_width = 0, texture_height = 0;
@@ -1040,16 +1043,15 @@ static void draw_pvr_translucent_control_triangle()
     v.argb = 0xFFFF2020u; pvr_prim(&v, sizeof(v));
 }
 
-static void draw_screen(const Results &r)
+static void draw_screen(const Results &r, size_t selected_mesh)
 {
     pvr_wait_ready();
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_OP_POLY);
-    // v225 isolates the PVR opaque-list control primitive from SceneBuilder output (Flycast check).
-    // If this green triangle appears, an earlier real-scene primitive/list state is
-    // interfering; if it remains absent while the TR control works, investigate
-    // opaque-list setup independently.
-    const PvrRenderStats pvr_stats{};
+    // v227 renders exactly one real SceneBuilder mesh per capture interval.
+    // The green control triangle follows that mesh, making per-mesh list-state
+    // interference visible without changing the real geometry or texture path.
+    const PvrRenderStats pvr_stats = draw_scene_builder_output(r, selected_mesh);
     draw_pvr_control_triangle();
     pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
@@ -1141,8 +1143,8 @@ static void draw_screen(const Results &r)
     if (r.synthetic_fixture)
         draw_text(40, 444, r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL");
     else {
-        snprintf(line, sizeof(line), "SCENE:%s TRI:%u",
-            r.real_scene ? "PASS" : "WAIT",
+        snprintf(line, sizeof(line), "MESH TEST:%u/9 TRI:%u",
+            static_cast<unsigned>(selected_mesh + 1),
             static_cast<unsigned>(pvr_stats.triangles_submitted));
         draw_text(40, 444, line);
     }
@@ -1184,8 +1186,11 @@ int main()
             scene_texture_ready = true;
         }
     }
+    unsigned frame = 0;
     for (;;) {
-        draw_screen(results);
+        const size_t selected_mesh = (frame / 180u) % 9u;
+        draw_screen(results, selected_mesh);
+        ++frame;
         thd_sleep(16);
     }
     return 0;
