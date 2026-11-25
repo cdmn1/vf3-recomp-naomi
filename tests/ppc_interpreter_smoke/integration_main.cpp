@@ -926,12 +926,17 @@ struct PvrRenderStats {
     float vp_x = 0.0f, vp_y = 0.0f, vp_w = 0.0f, vp_h = 0.0f;
     float fr_left = 0.0f, fr_right = 0.0f, fr_top = 0.0f, fr_bottom = 0.0f;
     float matrix_rows[12] = {};
-    // v233: upstream Model 3 near/guard-band clipping diagnostics for the first triangle.
+    // v236: upstream Model 3 near/guard-band clipping diagnostics for the first triangle.
     float first_camera[9] = {};
     float clip_min[5] = {1.0e9f, 1.0e9f, 1.0e9f, 1.0e9f, 1.0e9f};
     uint32_t clip_inside[5] = {};
     float upstream_screen_x[3] = {}, upstream_screen_y[3] = {};
     uint32_t upstream_screen_count = 0;
+    // v236: true sequential upstream near/guard-band clipping of the first triangle.
+    uint32_t clipped_vertex_count = 0;
+    float clipped_min_x = 1.0e9f, clipped_min_y = 1.0e9f;
+    float clipped_max_x = -1.0e9f, clipped_max_y = -1.0e9f;
+    float max_projection_delta = 0.0f;
 };
 
 static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selected_mesh)
@@ -1084,6 +1089,78 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                             vertex.y < 0.0f || vertex.y >= 480.0f)
                             ++stats.vertices_offscreen;
                     }
+                    if (first == 0u && stats.first_screen_count == 3u) {
+                        // Match upstream Raster::prepare_mesh() Sutherland-Hodgman
+                        // clipping order and equations: near, left, right, bottom, top.
+                        // Position interpolation is sufficient here because this diagnostic
+                        // compares only the resulting projected polygon.
+                        constexpr float near_plane = 1.0e-3f;
+                        const float gl = viewport.left - 0.5f * (viewport.right - viewport.left);
+                        const float gr = viewport.right + 0.5f * (viewport.right - viewport.left);
+                        const float gb = viewport.bottom - 0.5f * (viewport.top - viewport.bottom);
+                        const float gt = viewport.top + 0.5f * (viewport.top - viewport.bottom);
+                        auto plane_distance = [&](int plane, const float *q) {
+                            switch (plane) {
+                            case 0: return -q[2] - near_plane;
+                            case 1: return q[0] + gl * q[2];
+                            case 2: return -gr * q[2] - q[0];
+                            case 3: return q[1] + gb * q[2];
+                            default: return -gt * q[2] - q[1];
+                            }
+                        };
+                        float buf_a[8][3] = {}, buf_b[8][3] = {};
+                        for (size_t k = 0; k < 3u; ++k)
+                            for (size_t axis = 0; axis < 3u; ++axis)
+                                buf_a[k][axis] = stats.first_camera[k * 3u + axis];
+                        int polygon_count = 3;
+                        float (*in)[3] = buf_a;
+                        float (*out)[3] = buf_b;
+                        for (int plane = 0; plane < 5 && polygon_count >= 3; ++plane) {
+                            int next_count = 0;
+                            for (int k = 0; k < polygon_count; ++k) {
+                                const float *pa = in[k];
+                                const float *pb = in[(k + 1) % polygon_count];
+                                const float da = plane_distance(plane, pa);
+                                const float db = plane_distance(plane, pb);
+                                if (da >= 0.0f && next_count < 8) {
+                                    for (size_t axis = 0; axis < 3u; ++axis)
+                                        out[next_count][axis] = pa[axis];
+                                    ++next_count;
+                                }
+                                if ((da >= 0.0f) != (db >= 0.0f) && next_count < 8) {
+                                    const float t = da / (da - db);
+                                    for (size_t axis = 0; axis < 3u; ++axis)
+                                        out[next_count][axis] = pa[axis] + (pb[axis] - pa[axis]) * t;
+                                    ++next_count;
+                                }
+                            }
+                            polygon_count = next_count;
+                            float (*swap)[3] = in; in = out; out = swap;
+                        }
+                        stats.clipped_vertex_count = static_cast<uint32_t>(polygon_count);
+                        for (int k = 0; k < polygon_count; ++k) {
+                            const float depth = -in[k][2];
+                            if (!(depth > near_plane) || !std::isfinite(depth)) continue;
+                            const float nx = (2.0f * (in[k][0] / depth) -
+                                (viewport.right + viewport.left)) /
+                                (viewport.right - viewport.left);
+                            const float ny = (2.0f * (in[k][1] / depth) -
+                                (viewport.top + viewport.bottom)) /
+                                (viewport.top - viewport.bottom);
+                            const float sx = viewport.vp_x + (nx + 1.0f) * 0.5f * viewport.vp_w;
+                            const float sy = viewport.vp_y + (1.0f - ny) * 0.5f * viewport.vp_h;
+                            stats.clipped_min_x = std::min(stats.clipped_min_x, sx);
+                            stats.clipped_min_y = std::min(stats.clipped_min_y, sy);
+                            stats.clipped_max_x = std::max(stats.clipped_max_x, sx);
+                            stats.clipped_max_y = std::max(stats.clipped_max_y, sy);
+                        }
+                        for (size_t k = 0; k < 3u; ++k) {
+                            stats.max_projection_delta = std::max(stats.max_projection_delta,
+                                std::fabs(stats.first_screen_x[k] - stats.upstream_screen_x[k]));
+                            stats.max_projection_delta = std::max(stats.max_projection_delta,
+                                std::fabs(stats.first_screen_y[k] - stats.upstream_screen_y[k]));
+                        }
+                    }
                     if (!valid) {
                         ++stats.triangles_rejected;
                         continue;
@@ -1232,73 +1309,27 @@ static void draw_screen(const Results &r, size_t selected_mesh, unsigned diagnos
             static_cast<unsigned>(pvr_stats.triangles_rejected),
             diagnostic_page);
         draw_text(40, 390, line);
-        if (diagnostic_page == 0) {
-            snprintf(line, sizeof(line), "SRC X %.2g..%.2g Y %.2g..%.2g",
-                pvr_stats.source_min[0], pvr_stats.source_max[0],
-                pvr_stats.source_min[1], pvr_stats.source_max[1]);
-            draw_text(40, 404, line);
-            snprintf(line, sizeof(line), "SRC Z %.2g..%.2g",
-                pvr_stats.source_min[2], pvr_stats.source_max[2]);
-            draw_text(40, 418, line);
-            snprintf(line, sizeof(line), "M0 %.2g %.2g %.2g T%.2g",
-                pvr_stats.matrix_rows[0], pvr_stats.matrix_rows[1],
-                pvr_stats.matrix_rows[2], pvr_stats.matrix_rows[3]);
-            draw_text(40, 432, line);
-            snprintf(line, sizeof(line), "M1 %.2g %.2g %.2g T%.2g",
-                pvr_stats.matrix_rows[4], pvr_stats.matrix_rows[5],
-                pvr_stats.matrix_rows[6], pvr_stats.matrix_rows[7]);
-            draw_text(40, 446, line);
-            snprintf(line, sizeof(line), "M2 %.2g %.2g %.2g T%.2g",
-                pvr_stats.matrix_rows[8], pvr_stats.matrix_rows[9],
-                pvr_stats.matrix_rows[10], pvr_stats.matrix_rows[11]);
-            draw_text(40, 460, line);
-        } else if (diagnostic_page == 1) {
-            snprintf(line, sizeof(line), "CAM P0 %.2g %.2g %.2g",
-                pvr_stats.first_camera[0], pvr_stats.first_camera[1], pvr_stats.first_camera[2]);
-            draw_text(40, 404, line);
-            snprintf(line, sizeof(line), "CAM P1 %.2g %.2g %.2g",
-                pvr_stats.first_camera[3], pvr_stats.first_camera[4], pvr_stats.first_camera[5]);
-            draw_text(40, 418, line);
-            snprintf(line, sizeof(line), "CAM P2 %.2g %.2g %.2g",
-                pvr_stats.first_camera[6], pvr_stats.first_camera[7], pvr_stats.first_camera[8]);
-            draw_text(40, 432, line);
-            snprintf(line, sizeof(line), "NEAR min %.2g IN%u/3",
-                pvr_stats.clip_min[0], static_cast<unsigned>(pvr_stats.clip_inside[0]));
-            draw_text(40, 446, line);
-            snprintf(line, sizeof(line), "LEFT min %.2g IN%u/3",
-                pvr_stats.clip_min[1], static_cast<unsigned>(pvr_stats.clip_inside[1]));
-            draw_text(40, 460, line);
-            snprintf(line, sizeof(line), "RIGHT min %.2g IN%u/3",
-                pvr_stats.clip_min[2], static_cast<unsigned>(pvr_stats.clip_inside[2]));
-            draw_text(40, 474, line);
-        } else {
-            snprintf(line, sizeof(line), "BOTTOM min %.2g IN%u/3",
-                pvr_stats.clip_min[3], static_cast<unsigned>(pvr_stats.clip_inside[3]));
-            draw_text(40, 404, line);
-            snprintf(line, sizeof(line), "TOP min %.2g IN%u/3",
-                pvr_stats.clip_min[4], static_cast<unsigned>(pvr_stats.clip_inside[4]));
-            draw_text(40, 418, line);
-            bool wholly_outside = false, needs_clip = false;
-            for (size_t plane = 0; plane < 5u; ++plane) {
-                if (pvr_stats.clip_inside[plane] == 0u) wholly_outside = true;
-                else if (pvr_stats.clip_inside[plane] != 3u) needs_clip = true;
-            }
-            const char *clip_result = wholly_outside ? "UPSTREAM: REJECT" :
-                (needs_clip ? "UPSTREAM: CLIP" : "UPSTREAM: INSIDE");
-            draw_text(40, 432, clip_result);
-            snprintf(line, sizeof(line), "UP P0 %.3g,%.3g P1 %.3g,%.3g",
-                pvr_stats.upstream_screen_x[0], pvr_stats.upstream_screen_y[0],
-                pvr_stats.upstream_screen_x[1], pvr_stats.upstream_screen_y[1]);
-            draw_text(40, 446, line);
-            snprintf(line, sizeof(line), "UP P2 %.3g,%.3g VP %.0f,%.0f %.0fx%.0f",
-                pvr_stats.upstream_screen_x[2], pvr_stats.upstream_screen_y[2],
-                pvr_stats.vp_x, pvr_stats.vp_y, pvr_stats.vp_w, pvr_stats.vp_h);
-            draw_text(40, 460, line);
-            snprintf(line, sizeof(line), "FR L/R %.3g %.3g B/T %.3g %.3g",
-                pvr_stats.fr_left, pvr_stats.fr_right,
-                pvr_stats.fr_bottom, pvr_stats.fr_top);
-            draw_text(40, 474, line);
-        }
+        // v236 keeps one stable diagnostic page per mesh so a single capture
+        // records the full comparison, rather than cycling three pages.
+        snprintf(line, sizeof(line), "CAM P0 %.2g %.2g %.2g",
+            pvr_stats.first_camera[0], pvr_stats.first_camera[1], pvr_stats.first_camera[2]);
+        draw_text(40, 404, line);
+        snprintf(line, sizeof(line), "CAM P1 %.2g %.2g %.2g",
+            pvr_stats.first_camera[3], pvr_stats.first_camera[4], pvr_stats.first_camera[5]);
+        draw_text(40, 418, line);
+        snprintf(line, sizeof(line), "CAM P2 %.2g %.2g %.2g",
+            pvr_stats.first_camera[6], pvr_stats.first_camera[7], pvr_stats.first_camera[8]);
+        draw_text(40, 432, line);
+        snprintf(line, sizeof(line), "CLIP POLYGON VERTICES: %u",
+            static_cast<unsigned>(pvr_stats.clipped_vertex_count));
+        draw_text(40, 446, line);
+        snprintf(line, sizeof(line), "CLIP XY %.3g..%.3g %.3g..%.3g",
+            pvr_stats.clipped_min_x, pvr_stats.clipped_max_x,
+            pvr_stats.clipped_min_y, pvr_stats.clipped_max_y);
+        draw_text(40, 460, line);
+        snprintf(line, sizeof(line), "UPSTREAM vs PVR MAX XY DELTA: %.3g",
+            pvr_stats.max_projection_delta);
+        draw_text(40, 474, line);
     }
     pvr_list_finish();
     pvr_scene_finish();
@@ -1326,8 +1357,7 @@ int main()
     unsigned frame = 0;
     for (;;) {
         const size_t selected_mesh = (frame / 180u) % 9u;
-        const unsigned diagnostic_page = (frame / 60u) % 3u;
-        draw_screen(results, selected_mesh, diagnostic_page);
+        draw_screen(results, selected_mesh, 0u);
         ++frame;
         thd_sleep(16);
     }
