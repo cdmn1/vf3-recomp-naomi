@@ -978,50 +978,93 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                 pvr_poly_compile(&header, &cxt);
                 pvr_prim(&header, sizeof(header));
 
-                // Reject whole triangles rather than emitting incomplete strips.
+                // Clip each camera-space triangle against the same five planes as
+                // upstream Raster::prepare_mesh(), then triangulate the resulting polygon.
+                struct ClipVertex {
+                    float p[3];
+                    float u, v;
+                    float a, r, g, b;
+                };
+                constexpr float near_plane = 1.0e-3f;
+                const float gl = viewport.left - 0.5f * (viewport.right - viewport.left);
+                const float gr = viewport.right + 0.5f * (viewport.right - viewport.left);
+                const float gb = viewport.bottom - 0.5f * (viewport.top - viewport.bottom);
+                const float gt = viewport.top + 0.5f * (viewport.top - viewport.bottom);
+                auto plane_distance = [&](int plane, const ClipVertex &q) {
+                    switch (plane) {
+                    case 0: return -q.p[2] - near_plane;
+                    case 1: return q.p[0] + gl * q.p[2];
+                    case 2: return -gr * q.p[2] - q.p[0];
+                    case 3: return q.p[1] + gb * q.p[2];
+                    default: return -gt * q.p[2] - q.p[1];
+                    }
+                };
+                auto interpolate = [](const ClipVertex &a, const ClipVertex &b, float t) {
+                    ClipVertex v{};
+                    for (size_t axis = 0; axis < 3; ++axis)
+                        v.p[axis] = a.p[axis] + (b.p[axis] - a.p[axis]) * t;
+                    v.u = a.u + (b.u - a.u) * t;
+                    v.v = a.v + (b.v - a.v) * t;
+                    v.a = a.a + (b.a - a.a) * t;
+                    v.r = a.r + (b.r - a.r) * t;
+                    v.g = a.g + (b.g - a.g) * t;
+                    v.b = a.b + (b.b - a.b) * t;
+                    return v;
+                };
                 for (size_t first = 0; first + 2 < mesh.verts.size(); first += 3) {
-                    pvr_vertex_t vertices[3]{};
+                    ClipVertex buf_a[8]{}, buf_b[8]{};
                     bool valid = true;
                     for (size_t j = 0; j < 3; ++j) {
                         const video::Vertex &source = mesh.verts[first + j];
                         const float *m = model.matrix.m;
-                        const float vx = m[0] * source.pos[0] + m[4] * source.pos[1] +
+                        ClipVertex &v = buf_a[j];
+                        v.p[0] = m[0] * source.pos[0] + m[4] * source.pos[1] +
                             m[8] * source.pos[2] + m[12];
-                        const float vy = m[1] * source.pos[0] + m[5] * source.pos[1] +
+                        v.p[1] = m[1] * source.pos[0] + m[5] * source.pos[1] +
                             m[9] * source.pos[2] + m[13];
-                        const float vz = m[2] * source.pos[0] + m[6] * source.pos[1] +
+                        v.p[2] = m[2] * source.pos[0] + m[6] * source.pos[1] +
                             m[10] * source.pos[2] + m[14];
-                        const float depth = -vz;
                         const float source_values[3] = {
                             source.pos[0], source.pos[1], source.pos[2]
                         };
-                        const float world_values[3] = {vx, vy, vz};
+                        for (size_t axis = 0; axis < 3; ++axis) {
+                            if (!std::isfinite(source_values[axis]) || !std::isfinite(v.p[axis]))
+                                valid = false;
+                            else {
+                                stats.source_min[axis] = std::min(stats.source_min[axis], source_values[axis]);
+                                stats.source_max[axis] = std::max(stats.source_max[axis], source_values[axis]);
+                                stats.world_min[axis] = std::min(stats.world_min[axis], v.p[axis]);
+                                stats.world_max[axis] = std::max(stats.world_max[axis], v.p[axis]);
+                            }
+                        }
+                        // SceneBuilder UVs are in texels; PVR2 expects normalized coordinates.
+                        v.u = textured ? source.uv[0] / float(mesh.width) : 0.0f;
+                        v.v = textured ? source.uv[1] / float(mesh.height) : 0.0f;
+                        v.a = model.alpha * source.colour[3] / 255.0f;
+                        v.r = source.colour[0] / 255.0f;
+                        v.g = source.colour[1] / 255.0f;
+                        v.b = source.colour[2] / 255.0f;
                         if (first == 0u) {
-                            stats.first_camera[j * 3u + 0u] = vx;
-                            stats.first_camera[j * 3u + 1u] = vy;
-                            stats.first_camera[j * 3u + 2u] = vz;
-                            // Match upstream Raster::prepare_mesh() clipping planes.
-                            constexpr float near_plane = 1.0e-3f;
-                            const float gl = viewport.left - 0.5f * (viewport.right - viewport.left);
-                            const float gr = viewport.right + 0.5f * (viewport.right - viewport.left);
-                            const float gb = viewport.bottom - 0.5f * (viewport.top - viewport.bottom);
-                            const float gt = viewport.top + 0.5f * (viewport.top - viewport.bottom);
+                            stats.first_camera[j * 3u + 0u] = v.p[0];
+                            stats.first_camera[j * 3u + 1u] = v.p[1];
+                            stats.first_camera[j * 3u + 2u] = v.p[2];
                             const float distances[5] = {
-                                -vz - near_plane,
-                                vx + gl * vz,
-                                -gr * vz - vx,
-                                vy + gb * vz,
-                                -gt * vz - vy
+                                -v.p[2] - near_plane,
+                                v.p[0] + gl * v.p[2],
+                                -gr * v.p[2] - v.p[0],
+                                v.p[1] + gb * v.p[2],
+                                -gt * v.p[2] - v.p[1]
                             };
                             for (size_t plane = 0; plane < 5u; ++plane) {
                                 stats.clip_min[plane] = std::min(stats.clip_min[plane], distances[plane]);
                                 if (distances[plane] >= 0.0f) ++stats.clip_inside[plane];
                             }
+                            const float depth = -v.p[2];
                             if (depth > near_plane && std::isfinite(depth)) {
-                                const float nx = (2.0f * (vx / depth) -
+                                const float nx = (2.0f * (v.p[0] / depth) -
                                     (viewport.right + viewport.left)) /
                                     (viewport.right - viewport.left);
-                                const float ny = (2.0f * (vy / depth) -
+                                const float ny = (2.0f * (v.p[1] / depth) -
                                     (viewport.top + viewport.bottom)) /
                                     (viewport.top - viewport.bottom);
                                 stats.upstream_screen_x[j] = viewport.vp_x +
@@ -1031,120 +1074,40 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                                 ++stats.upstream_screen_count;
                             }
                         }
-                        for (size_t axis = 0; axis < 3; ++axis) {
-                            if (std::isfinite(source_values[axis])) {
-                                stats.source_min[axis] = std::min(stats.source_min[axis], source_values[axis]);
-                                stats.source_max[axis] = std::max(stats.source_max[axis], source_values[axis]);
-                            }
-                            if (std::isfinite(world_values[axis])) {
-                                stats.world_min[axis] = std::min(stats.world_min[axis], world_values[axis]);
-                                stats.world_max[axis] = std::max(stats.world_max[axis], world_values[axis]);
-                            }
-                        }
-                        if (!(depth > 0.001f) || !std::isfinite(depth)) {
-                            valid = false;
-                            break;
-                        }
-                        pvr_vertex_t &vertex = vertices[j];
-                        vertex.flags = j == 2 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
-                        vertex.x = viewport.vp_x + viewport.vp_w *
-                            (vx / depth - viewport.left) / (viewport.right - viewport.left);
-                        vertex.y = viewport.vp_y + viewport.vp_h *
-                            (viewport.top - vy / depth) / (viewport.top - viewport.bottom);
-                        if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y)) {
-                            valid = false;
-                            break;
-                        }
-                        if (stats.first_screen_count < 3u) {
-                            const uint32_t at = stats.first_screen_count++;
-                            stats.first_screen_x[at] = vertex.x;
-                            stats.first_screen_y[at] = vertex.y;
-                        }
-                        vertex.z = 1.0f;
-                        stats.min_depth = std::min(stats.min_depth, depth);
-                        stats.max_depth = std::max(stats.max_depth, depth);
-                        // SceneBuilder UVs are measured in texels (1.0 = one source texel),
-                        // while PVR2 expects normalized coordinates. Keep the original
-                        // mesh dimensions here even when its upload was downscaled to 128 (real VF3 rebuild).
-                        vertex.u = textured ? source.uv[0] / float(mesh.width) : 0.0f;
-                        vertex.v = textured ? source.uv[1] / float(mesh.height) : 0.0f;
-                        if (textured) {
-                            stats.min_u = std::min(stats.min_u, vertex.u);
-                            stats.max_u = std::max(stats.max_u, vertex.u);
-                            stats.min_v = std::min(stats.min_v, vertex.v);
-                            stats.max_v = std::max(stats.max_v, vertex.v);
-                        }
-                        vertex.argb = kForceSolidWhiteDiagnostic ? 0xFFFFFFFFu :
-                            PVR_PACK_COLOR(
-                                model.alpha * source.colour[3] / 255.0f,
-                                source.colour[0] / 255.0f,
-                                source.colour[1] / 255.0f,
-                                source.colour[2] / 255.0f);
-                        vertex.oargb = 0;
-                        stats.min_x = std::min(stats.min_x, vertex.x);
-                        stats.min_y = std::min(stats.min_y, vertex.y);
-                        stats.max_x = std::max(stats.max_x, vertex.x);
-                        stats.max_y = std::max(stats.max_y, vertex.y);
-                        if (vertex.x < 0.0f || vertex.x >= 640.0f ||
-                            vertex.y < 0.0f || vertex.y >= 480.0f)
-                            ++stats.vertices_offscreen;
                     }
-                    if (first == 0u && stats.first_screen_count == 3u) {
-                        // Match upstream Raster::prepare_mesh() Sutherland-Hodgman
-                        // clipping order and equations: near, left, right, bottom, top.
-                        // Position interpolation is sufficient here because this diagnostic
-                        // compares only the resulting projected polygon.
-                        constexpr float near_plane = 1.0e-3f;
-                        const float gl = viewport.left - 0.5f * (viewport.right - viewport.left);
-                        const float gr = viewport.right + 0.5f * (viewport.right - viewport.left);
-                        const float gb = viewport.bottom - 0.5f * (viewport.top - viewport.bottom);
-                        const float gt = viewport.top + 0.5f * (viewport.top - viewport.bottom);
-                        auto plane_distance = [&](int plane, const float *q) {
-                            switch (plane) {
-                            case 0: return -q[2] - near_plane;
-                            case 1: return q[0] + gl * q[2];
-                            case 2: return -gr * q[2] - q[0];
-                            case 3: return q[1] + gb * q[2];
-                            default: return -gt * q[2] - q[1];
+                    if (!valid) {
+                        ++stats.triangles_rejected;
+                        continue;
+                    }
+                    int polygon_count = 3;
+                    ClipVertex *in = buf_a;
+                    ClipVertex *out = buf_b;
+                    for (int plane = 0; plane < 5 && polygon_count >= 3; ++plane) {
+                        int next_count = 0;
+                        for (int k = 0; k < polygon_count; ++k) {
+                            const ClipVertex &pa = in[k];
+                            const ClipVertex &pb = in[(k + 1) % polygon_count];
+                            const float da = plane_distance(plane, pa);
+                            const float db = plane_distance(plane, pb);
+                            if (da >= 0.0f && next_count < 8)
+                                out[next_count++] = pa;
+                            if ((da >= 0.0f) != (db >= 0.0f) && next_count < 8) {
+                                const float t = da / (da - db);
+                                out[next_count++] = interpolate(pa, pb, t);
                             }
-                        };
-                        float buf_a[8][3] = {}, buf_b[8][3] = {};
-                        for (size_t k = 0; k < 3u; ++k)
-                            for (size_t axis = 0; axis < 3u; ++axis)
-                                buf_a[k][axis] = stats.first_camera[k * 3u + axis];
-                        int polygon_count = 3;
-                        float (*in)[3] = buf_a;
-                        float (*out)[3] = buf_b;
-                        for (int plane = 0; plane < 5 && polygon_count >= 3; ++plane) {
-                            int next_count = 0;
-                            for (int k = 0; k < polygon_count; ++k) {
-                                const float *pa = in[k];
-                                const float *pb = in[(k + 1) % polygon_count];
-                                const float da = plane_distance(plane, pa);
-                                const float db = plane_distance(plane, pb);
-                                if (da >= 0.0f && next_count < 8) {
-                                    for (size_t axis = 0; axis < 3u; ++axis)
-                                        out[next_count][axis] = pa[axis];
-                                    ++next_count;
-                                }
-                                if ((da >= 0.0f) != (db >= 0.0f) && next_count < 8) {
-                                    const float t = da / (da - db);
-                                    for (size_t axis = 0; axis < 3u; ++axis)
-                                        out[next_count][axis] = pa[axis] + (pb[axis] - pa[axis]) * t;
-                                    ++next_count;
-                                }
-                            }
-                            polygon_count = next_count;
-                            float (*swap)[3] = in; in = out; out = swap;
                         }
+                        polygon_count = next_count;
+                        ClipVertex *swap = in; in = out; out = swap;
+                    }
+                    if (first == 0u) {
                         stats.clipped_vertex_count = static_cast<uint32_t>(polygon_count);
                         for (int k = 0; k < polygon_count; ++k) {
-                            const float depth = -in[k][2];
+                            const float depth = -in[k].p[2];
                             if (!(depth > near_plane) || !std::isfinite(depth)) continue;
-                            const float nx = (2.0f * (in[k][0] / depth) -
+                            const float nx = (2.0f * (in[k].p[0] / depth) -
                                 (viewport.right + viewport.left)) /
                                 (viewport.right - viewport.left);
-                            const float ny = (2.0f * (in[k][1] / depth) -
+                            const float ny = (2.0f * (in[k].p[1] / depth) -
                                 (viewport.top + viewport.bottom)) /
                                 (viewport.top - viewport.bottom);
                             const float sx = viewport.vp_x + (nx + 1.0f) * 0.5f * viewport.vp_w;
@@ -1154,21 +1117,62 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                             stats.clipped_max_x = std::max(stats.clipped_max_x, sx);
                             stats.clipped_max_y = std::max(stats.clipped_max_y, sy);
                         }
-                        for (size_t k = 0; k < 3u; ++k) {
-                            stats.max_projection_delta = std::max(stats.max_projection_delta,
-                                std::fabs(stats.first_screen_x[k] - stats.upstream_screen_x[k]));
-                            stats.max_projection_delta = std::max(stats.max_projection_delta,
-                                std::fabs(stats.first_screen_y[k] - stats.upstream_screen_y[k]));
-                        }
                     }
-                    if (!valid) {
+                    if (polygon_count < 3) {
                         ++stats.triangles_rejected;
                         continue;
                     }
-                    for (const pvr_vertex_t &vertex : vertices)
-                        pvr_prim(&vertex, sizeof(vertex));
-                    ++stats.triangles_submitted;
-                    stats.vertices_submitted += 3;
+                    // Fan triangulation preserves the clipped convex polygon and emits
+                    // complete PVR triangles only; interpolate all per-vertex attributes.
+                    for (int tri = 1; tri + 1 < polygon_count; ++tri) {
+                        const ClipVertex *fan[3] = {&in[0], &in[tri], &in[tri + 1]};
+                        for (size_t j = 0; j < 3; ++j) {
+                            const ClipVertex &source = *fan[j];
+                            const float depth = -source.p[2];
+                            if (!(depth > near_plane) || !std::isfinite(depth)) {
+                                valid = false;
+                                break;
+                            }
+                            pvr_vertex_t vertex{};
+                            vertex.flags = j == 2 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
+                            vertex.x = viewport.vp_x + viewport.vp_w *
+                                (source.p[0] / depth - viewport.left) /
+                                (viewport.right - viewport.left);
+                            vertex.y = viewport.vp_y + viewport.vp_h *
+                                (viewport.top - source.p[1] / depth) /
+                                (viewport.top - viewport.bottom);
+                            if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y)) {
+                                valid = false;
+                                break;
+                            }
+                            vertex.z = 1.0f;
+                            vertex.u = source.u;
+                            vertex.v = source.v;
+                            vertex.argb = kForceSolidWhiteDiagnostic ? 0xFFFFFFFFu :
+                                PVR_PACK_COLOR(source.a, source.r, source.g, source.b);
+                            vertex.oargb = 0;
+                            stats.min_depth = std::min(stats.min_depth, depth);
+                            stats.max_depth = std::max(stats.max_depth, depth);
+                            stats.min_x = std::min(stats.min_x, vertex.x);
+                            stats.min_y = std::min(stats.min_y, vertex.y);
+                            stats.max_x = std::max(stats.max_x, vertex.x);
+                            stats.max_y = std::max(stats.max_y, vertex.y);
+                            if (vertex.x < 0.0f || vertex.x >= 640.0f ||
+                                vertex.y < 0.0f || vertex.y >= 480.0f)
+                                ++stats.vertices_offscreen;
+                            if (textured) {
+                                stats.min_u = std::min(stats.min_u, vertex.u);
+                                stats.max_u = std::max(stats.max_u, vertex.u);
+                                stats.min_v = std::min(stats.min_v, vertex.v);
+                                stats.max_v = std::max(stats.max_v, vertex.v);
+                            }
+                            pvr_prim(&vertex, sizeof(vertex));
+                        }
+                        if (!valid) break;
+                        ++stats.triangles_submitted;
+                        stats.vertices_submitted += 3;
+                    }
+                    if (!valid) ++stats.triangles_rejected;
                 }
             }
         }
