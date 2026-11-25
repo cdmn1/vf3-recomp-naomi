@@ -1,0 +1,45 @@
+name: Analyze VF3 v227 video
+
+on:
+  push:
+    branches:
+      - softfloat-rounding-experiment
+    paths:
+      - .github/workflows/analyze-v227-video.yml
+
+permissions:
+  contents: write
+
+jobs:
+  extract-frames:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out analysis branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the user-recorded video from main
+        run: |
+          git fetch origin main
+          git show origin/main:tests/vf3_naomi_rev_d-v227.mp4 > /tmp/vf3-v227.mp4
+          test -s /tmp/vf3-v227.mp4
+
+      - name: Extract frames and create contact sheet
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg imagemagick
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 /tmp/vf3-v227.mp4 | tee /tmp/video-duration.txt
+          mkdir -p /tmp/vf3-v227-frames
+          ffmpeg -hide_banner -loglevel error -i /tmp/vf3-v227.mp4 -vf "fps=1,scale=320:-1" /tmp/vf3-v227-frames/frame-%03d.png
+          test "$(find /tmp/vf3-v227-frames -name '*.png' | wc -l)" -gt 0
+          montage /tmp/vf3-v227-frames/frame-*.png -set label '%f' -font DejaVu-Sans -pointsize 14 -geometry 320x240+8+8 -tile 4x tests/vf3_naomi_rev_d-v227-contact-sheet.png
+          file tests/vf3_naomi_rev_d-v227-contact-sheet.png
+
+      - name: Commit contact sheet to analysis branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/vf3_naomi_rev_d-v227-contact-sheet.png
+          git commit -m "Add extracted v227 video contact sheet [skip ci]"
+          git push origin HEAD:softfloat-rounding-experiment
