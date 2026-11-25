@@ -926,6 +926,12 @@ struct PvrRenderStats {
     float vp_x = 0.0f, vp_y = 0.0f, vp_w = 0.0f, vp_h = 0.0f;
     float fr_left = 0.0f, fr_right = 0.0f, fr_top = 0.0f, fr_bottom = 0.0f;
     float matrix_rows[12] = {};
+    // v233: upstream Model 3 near/guard-band clipping diagnostics for the first triangle.
+    float first_camera[9] = {};
+    float clip_min[5] = {1.0e9f, 1.0e9f, 1.0e9f, 1.0e9f, 1.0e9f};
+    uint32_t clip_inside[5] = {};
+    float upstream_screen_x[3] = {}, upstream_screen_y[3] = {};
+    uint32_t upstream_screen_count = 0;
 };
 
 static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selected_mesh)
@@ -985,6 +991,41 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                             source.pos[0], source.pos[1], source.pos[2]
                         };
                         const float world_values[3] = {vx, vy, vz};
+                        if (first == 0u) {
+                            stats.first_camera[j * 3u + 0u] = vx;
+                            stats.first_camera[j * 3u + 1u] = vy;
+                            stats.first_camera[j * 3u + 2u] = vz;
+                            // Match upstream Raster::prepare_mesh() clipping planes.
+                            constexpr float near_plane = 1.0e-3f;
+                            const float gl = viewport.left - 0.5f * (viewport.right - viewport.left);
+                            const float gr = viewport.right + 0.5f * (viewport.right - viewport.left);
+                            const float gb = viewport.bottom - 0.5f * (viewport.top - viewport.bottom);
+                            const float gt = viewport.top + 0.5f * (viewport.top - viewport.bottom);
+                            const float distances[5] = {
+                                -vz - near_plane,
+                                vx + gl * vz,
+                                -gr * vz - vx,
+                                vy + gb * vz,
+                                -gt * vz - vy
+                            };
+                            for (size_t plane = 0; plane < 5u; ++plane) {
+                                stats.clip_min[plane] = std::min(stats.clip_min[plane], distances[plane]);
+                                if (distances[plane] >= 0.0f) ++stats.clip_inside[plane];
+                            }
+                            if (depth > near_plane && std::isfinite(depth)) {
+                                const float nx = (2.0f * (vx / depth) -
+                                    (viewport.right + viewport.left)) /
+                                    (viewport.right - viewport.left);
+                                const float ny = (2.0f * (vy / depth) -
+                                    (viewport.top + viewport.bottom)) /
+                                    (viewport.top - viewport.bottom);
+                                stats.upstream_screen_x[j] = viewport.vp_x +
+                                    (nx + 1.0f) * 0.5f * viewport.vp_w;
+                                stats.upstream_screen_y[j] = viewport.vp_y +
+                                    (1.0f - ny) * 0.5f * viewport.vp_h;
+                                ++stats.upstream_screen_count;
+                            }
+                        }
                         for (size_t axis = 0; axis < 3; ++axis) {
                             if (std::isfinite(source_values[axis])) {
                                 stats.source_min[axis] = std::min(stats.source_min[axis], source_values[axis]);
@@ -1211,27 +1252,50 @@ static void draw_screen(const Results &r, size_t selected_mesh, unsigned diagnos
                 pvr_stats.matrix_rows[8], pvr_stats.matrix_rows[9],
                 pvr_stats.matrix_rows[10], pvr_stats.matrix_rows[11]);
             draw_text(40, 460, line);
-        } else {
-            snprintf(line, sizeof(line), "CAM X %.2g..%.2g Y %.2g..%.2g",
-                pvr_stats.world_min[0], pvr_stats.world_max[0],
-                pvr_stats.world_min[1], pvr_stats.world_max[1]);
+        } else if (diagnostic_page == 1) {
+            snprintf(line, sizeof(line), "CAM P0 %.2g %.2g %.2g",
+                pvr_stats.first_camera[0], pvr_stats.first_camera[1], pvr_stats.first_camera[2]);
             draw_text(40, 404, line);
-            snprintf(line, sizeof(line), "CAM Z %.2g..%.2g DEPTH %.2g..%.2g",
-                pvr_stats.world_min[2], pvr_stats.world_max[2],
-                pvr_stats.min_depth, pvr_stats.max_depth);
+            snprintf(line, sizeof(line), "CAM P1 %.2g %.2g %.2g",
+                pvr_stats.first_camera[3], pvr_stats.first_camera[4], pvr_stats.first_camera[5]);
             draw_text(40, 418, line);
-            snprintf(line, sizeof(line), "P0 %.3g,%.3g P1 %.3g,%.3g",
-                pvr_stats.first_screen_x[0], pvr_stats.first_screen_y[0],
-                pvr_stats.first_screen_x[1], pvr_stats.first_screen_y[1]);
+            snprintf(line, sizeof(line), "CAM P2 %.2g %.2g %.2g",
+                pvr_stats.first_camera[6], pvr_stats.first_camera[7], pvr_stats.first_camera[8]);
             draw_text(40, 432, line);
-            snprintf(line, sizeof(line), "P2 %.3g,%.3g VP %.3g,%.3g %.3gx%.3g",
-                pvr_stats.first_screen_x[2], pvr_stats.first_screen_y[2],
-                pvr_stats.vp_x, pvr_stats.vp_y, pvr_stats.vp_w, pvr_stats.vp_h);
+            snprintf(line, sizeof(line), "NEAR min %.2g IN%u/3",
+                pvr_stats.clip_min[0], static_cast<unsigned>(pvr_stats.clip_inside[0]));
             draw_text(40, 446, line);
-            snprintf(line, sizeof(line), "FR L/R %.3g %.3g",
-                pvr_stats.fr_left, pvr_stats.fr_right);
+            snprintf(line, sizeof(line), "LEFT min %.2g IN%u/3",
+                pvr_stats.clip_min[1], static_cast<unsigned>(pvr_stats.clip_inside[1]));
             draw_text(40, 460, line);
-            snprintf(line, sizeof(line), "FR B/T %.3g %.3g",
+            snprintf(line, sizeof(line), "RIGHT min %.2g IN%u/3",
+                pvr_stats.clip_min[2], static_cast<unsigned>(pvr_stats.clip_inside[2]));
+            draw_text(40, 474, line);
+        } else {
+            snprintf(line, sizeof(line), "BOTTOM min %.2g IN%u/3",
+                pvr_stats.clip_min[3], static_cast<unsigned>(pvr_stats.clip_inside[3]));
+            draw_text(40, 404, line);
+            snprintf(line, sizeof(line), "TOP min %.2g IN%u/3",
+                pvr_stats.clip_min[4], static_cast<unsigned>(pvr_stats.clip_inside[4]));
+            draw_text(40, 418, line);
+            bool wholly_outside = false, needs_clip = false;
+            for (size_t plane = 0; plane < 5u; ++plane) {
+                if (pvr_stats.clip_inside[plane] == 0u) wholly_outside = true;
+                else if (pvr_stats.clip_inside[plane] != 3u) needs_clip = true;
+            }
+            const char *clip_result = wholly_outside ? "UPSTREAM: REJECT" :
+                (needs_clip ? "UPSTREAM: CLIP" : "UPSTREAM: INSIDE");
+            draw_text(40, 432, clip_result);
+            snprintf(line, sizeof(line), "UP P0 %.3g,%.3g P1 %.3g,%.3g",
+                pvr_stats.upstream_screen_x[0], pvr_stats.upstream_screen_y[0],
+                pvr_stats.upstream_screen_x[1], pvr_stats.upstream_screen_y[1]);
+            draw_text(40, 446, line);
+            snprintf(line, sizeof(line), "UP P2 %.3g,%.3g VP %.0f,%.0f %.0fx%.0f",
+                pvr_stats.upstream_screen_x[2], pvr_stats.upstream_screen_y[2],
+                pvr_stats.vp_x, pvr_stats.vp_y, pvr_stats.vp_w, pvr_stats.vp_h);
+            draw_text(40, 460, line);
+            snprintf(line, sizeof(line), "FR L/R %.3g %.3g B/T %.3g %.3g",
+                pvr_stats.fr_left, pvr_stats.fr_right,
                 pvr_stats.fr_bottom, pvr_stats.fr_top);
             draw_text(40, 474, line);
         }
@@ -1262,7 +1326,7 @@ int main()
     unsigned frame = 0;
     for (;;) {
         const size_t selected_mesh = (frame / 180u) % 9u;
-        const unsigned diagnostic_page = (frame / 90u) & 1u;
+        const unsigned diagnostic_page = (frame / 90u) % 3u;
         draw_screen(results, selected_mesh, diagnostic_page);
         ++frame;
         thd_sleep(16);
