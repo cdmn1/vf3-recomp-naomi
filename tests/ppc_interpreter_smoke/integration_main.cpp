@@ -914,6 +914,15 @@ struct PvrRenderStats {
     float min_u = 1.0e9f, min_v = 1.0e9f;
     float max_u = -1.0e9f, max_v = -1.0e9f;
     float min_depth = 1.0e9f, max_depth = -1.0e9f;
+    float source_min[3] = {1.0e9f, 1.0e9f, 1.0e9f};
+    float source_max[3] = {-1.0e9f, -1.0e9f, -1.0e9f};
+    float world_min[3] = {1.0e9f, 1.0e9f, 1.0e9f};
+    float world_max[3] = {-1.0e9f, -1.0e9f, -1.0e9f};
+    float first_screen_x[3] = {};
+    float first_screen_y[3] = {};
+    uint32_t first_screen_count = 0;
+    float vp_x = 0.0f, vp_y = 0.0f, vp_w = 0.0f, vp_h = 0.0f;
+    float fr_left = 0.0f, fr_right = 0.0f, fr_top = 0.0f, fr_bottom = 0.0f;
 };
 
 static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selected_mesh)
@@ -933,6 +942,10 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                     real3d_texture_for(r, mesh, texture_width, texture_height) : nullptr;
                 stats.mesh_vertices = static_cast<uint32_t>(mesh.verts.size());
                 stats.mesh_triangles = static_cast<uint32_t>(mesh.verts.size() / 3u);
+                stats.vp_x = viewport.vp_x; stats.vp_y = viewport.vp_y;
+                stats.vp_w = viewport.vp_w; stats.vp_h = viewport.vp_h;
+                stats.fr_left = viewport.left; stats.fr_right = viewport.right;
+                stats.fr_top = viewport.top; stats.fr_bottom = viewport.bottom;
                 const bool textured = !kForceSolidWhiteDiagnostic && real_texture != nullptr;
                 if (textured) {
                     pvr_poly_cxt_txr(&cxt, PVR_LIST_OP_POLY,
@@ -959,6 +972,20 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                         const float vz = m[2] * source.pos[0] + m[6] * source.pos[1] +
                             m[10] * source.pos[2] + m[14];
                         const float depth = -vz;
+                        const float source_values[3] = {
+                            source.pos[0], source.pos[1], source.pos[2]
+                        };
+                        const float world_values[3] = {vx, vy, vz};
+                        for (size_t axis = 0; axis < 3; ++axis) {
+                            if (std::isfinite(source_values[axis])) {
+                                stats.source_min[axis] = std::min(stats.source_min[axis], source_values[axis]);
+                                stats.source_max[axis] = std::max(stats.source_max[axis], source_values[axis]);
+                            }
+                            if (std::isfinite(world_values[axis])) {
+                                stats.world_min[axis] = std::min(stats.world_min[axis], world_values[axis]);
+                                stats.world_max[axis] = std::max(stats.world_max[axis], world_values[axis]);
+                            }
+                        }
                         if (!(depth > 0.001f) || !std::isfinite(depth)) {
                             valid = false;
                             break;
@@ -972,6 +999,11 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                         if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y)) {
                             valid = false;
                             break;
+                        }
+                        if (stats.first_screen_count < 3u) {
+                            const uint32_t at = stats.first_screen_count++;
+                            stats.first_screen_x[at] = vertex.x;
+                            stats.first_screen_y[at] = vertex.y;
                         }
                         vertex.z = 1.0f;
                         stats.min_depth = std::min(stats.min_depth, depth);
@@ -1126,11 +1158,11 @@ static void draw_screen(const Results &r, size_t selected_mesh)
         r.mount_status, r.vrom_status, static_cast<unsigned>(r.real_vrom_nonzero),
         static_cast<unsigned>(r.meshes), static_cast<unsigned>(r.vertices));
     draw_text(40, 372, line);
-    snprintf(line, sizeof(line), "RAM:%u TILE:%u CULL:%u/%u",
-        static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes),
-        static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words));
-    draw_text(40, 390, line);
     if (r.synthetic_fixture) {
+        snprintf(line, sizeof(line), "RAM:%u TILE:%u CULL:%u/%u",
+            static_cast<unsigned>(r.ram_bytes), static_cast<unsigned>(r.tile_bytes),
+            static_cast<unsigned>(r.cull_lo_words), static_cast<unsigned>(r.cull_hi_words));
+        draw_text(40, 390, line);
         snprintf(line, sizeof(line), "POLY:%u FIFO:%u TEX:%u",
             static_cast<unsigned>(r.poly_words), static_cast<unsigned>(r.fifo_capacity),
             static_cast<unsigned>(r.tex_words));
@@ -1138,34 +1170,37 @@ static void draw_screen(const Results &r, size_t selected_mesh)
         snprintf(line, sizeof(line), "SCENE G:%u C:%u A:%u",
             r.scene_geometry ? 1u : 0u, r.scene_colour ? 1u : 0u,
             r.scene_attributes ? 1u : 0u);
-    } else {
-        snprintf(line, sizeof(line), "PPC CYC:%08X STEP:%u EXC:%u",
-            static_cast<unsigned>(r.real_boot_cycles),
-            static_cast<unsigned>(r.real_boot_pc_changes),
-            static_cast<unsigned>(r.real_boot_srr0_changes));
-        draw_text(40, 408, line);
-        snprintf(line, sizeof(line), "VF3 BOOT:%u PC:%08X",
-            static_cast<unsigned>(r.real_boot_frames), r.real_boot_pc);
-    }
-    if (r.synthetic_fixture) {
         draw_text(40, 426, line);
         draw_text(40, 444, r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL");
         draw_text(40, 462, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
     } else {
-        snprintf(line, sizeof(line), "M%u/9 V:%u T:%u OK:%u BAD:%u",
+        snprintf(line, sizeof(line), "M%u V:%u T:%u OK:%u BAD:%u",
             static_cast<unsigned>(selected_mesh + 1),
             static_cast<unsigned>(pvr_stats.mesh_vertices),
             static_cast<unsigned>(pvr_stats.mesh_triangles),
             static_cast<unsigned>(pvr_stats.triangles_submitted),
             static_cast<unsigned>(pvr_stats.triangles_rejected));
-        draw_text(40, 426, line);
-        snprintf(line, sizeof(line), "X:%.0f..%.0f Y:%.0f..%.0f",
-            pvr_stats.min_x, pvr_stats.max_x, pvr_stats.min_y, pvr_stats.max_y);
-        draw_text(40, 444, line);
-        snprintf(line, sizeof(line), "Z:%.1f..%.1f OUT:%u",
-            pvr_stats.min_depth, pvr_stats.max_depth,
-            static_cast<unsigned>(pvr_stats.vertices_offscreen));
-        draw_text(40, 462, line);
+        draw_text(40, 390, line);
+        snprintf(line, sizeof(line), "SRC X %.1f..%.1f Y %.1f..%.1f",
+            pvr_stats.source_min[0], pvr_stats.source_max[0],
+            pvr_stats.source_min[1], pvr_stats.source_max[1]);
+        draw_text(40, 404, line);
+        snprintf(line, sizeof(line), "SRC Z %.1f..%.1f WORLD Z %.1f..%.1f",
+            pvr_stats.source_min[2], pvr_stats.source_max[2],
+            pvr_stats.world_min[2], pvr_stats.world_max[2]);
+        draw_text(40, 418, line);
+        snprintf(line, sizeof(line), "WORLD X %.1f..%.1f Y %.1f..%.1f",
+            pvr_stats.world_min[0], pvr_stats.world_max[0],
+            pvr_stats.world_min[1], pvr_stats.world_max[1]);
+        draw_text(40, 432, line);
+        snprintf(line, sizeof(line), "SCR P0 %.0f,%.0f P1 %.0f,%.0f",
+            pvr_stats.first_screen_x[0], pvr_stats.first_screen_y[0],
+            pvr_stats.first_screen_x[1], pvr_stats.first_screen_y[1]);
+        draw_text(40, 446, line);
+        snprintf(line, sizeof(line), "P2 %.0f,%.0f VP %.0f,%.0f %.0fx%.0f",
+            pvr_stats.first_screen_x[2], pvr_stats.first_screen_y[2],
+            pvr_stats.vp_x, pvr_stats.vp_y, pvr_stats.vp_w, pvr_stats.vp_h);
+        draw_text(40, 460, line);
     }
     pvr_list_finish();
     pvr_scene_finish();
