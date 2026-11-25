@@ -903,6 +903,8 @@ static void draw_scene_texture()
 }
 
 struct PvrRenderStats {
+    uint32_t mesh_vertices = 0;
+    uint32_t mesh_triangles = 0;
     uint32_t triangles_submitted = 0;
     uint32_t triangles_rejected = 0;
     uint32_t vertices_submitted = 0;
@@ -929,6 +931,8 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                 uint16_t texture_width = 0, texture_height = 0;
                 const pvr_ptr_t real_texture = mesh.textured ?
                     real3d_texture_for(r, mesh, texture_width, texture_height) : nullptr;
+                stats.mesh_vertices = static_cast<uint32_t>(mesh.verts.size());
+                stats.mesh_triangles = static_cast<uint32_t>(mesh.verts.size() / 3u);
                 const bool textured = !kForceSolidWhiteDiagnostic && real_texture != nullptr;
                 if (textured) {
                     pvr_poly_cxt_txr(&cxt, PVR_LIST_OP_POLY,
@@ -1143,29 +1147,25 @@ static void draw_screen(const Results &r, size_t selected_mesh)
         snprintf(line, sizeof(line), "VF3 BOOT:%u PC:%08X",
             static_cast<unsigned>(r.real_boot_frames), r.real_boot_pc);
     }
-    draw_text(40, 426, line);
-    if (r.synthetic_fixture)
+    if (r.synthetic_fixture) {
+        draw_text(40, 426, line);
         draw_text(40, 444, r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL");
-    else {
-        snprintf(line, sizeof(line), "MESH TEST:%u/9 TRI:%u",
-            static_cast<unsigned>(selected_mesh + 1),
-            static_cast<unsigned>(pvr_stats.triangles_submitted));
-        draw_text(40, 444, line);
-    }
-    if (r.synthetic_fixture)
         draw_text(40, 462, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
-    else {
-        snprintf(line, sizeof(line), "UV:%.2f-%.2f/%.2f-%.2f TEX:%u/%u",
-            pvr_stats.min_u, pvr_stats.max_u, pvr_stats.min_v, pvr_stats.max_v,
-            static_cast<unsigned>(r.render_textures_ready),
-            static_cast<unsigned>(r.render_textures_failed));
+    } else {
+        snprintf(line, sizeof(line), "M%u/9 V:%u T:%u OK:%u BAD:%u",
+            static_cast<unsigned>(selected_mesh + 1),
+            static_cast<unsigned>(pvr_stats.mesh_vertices),
+            static_cast<unsigned>(pvr_stats.mesh_triangles),
+            static_cast<unsigned>(pvr_stats.triangles_submitted),
+            static_cast<unsigned>(pvr_stats.triangles_rejected));
+        draw_text(40, 426, line);
+        snprintf(line, sizeof(line), "X:%.0f..%.0f Y:%.0f..%.0f",
+            pvr_stats.min_x, pvr_stats.max_x, pvr_stats.min_y, pvr_stats.max_y);
+        draw_text(40, 444, line);
+        snprintf(line, sizeof(line), "Z:%.1f..%.1f OUT:%u",
+            pvr_stats.min_depth, pvr_stats.max_depth,
+            static_cast<unsigned>(pvr_stats.vertices_offscreen));
         draw_text(40, 462, line);
-        snprintf(line, sizeof(line), "TEX A0:%u A15:%u RGB:%u D:%.1f-%.1f",
-            static_cast<unsigned>(r.texture_alpha_zero),
-            static_cast<unsigned>(r.texture_alpha_opaque),
-            static_cast<unsigned>(r.texture_rgb_unique),
-            pvr_stats.min_depth, pvr_stats.max_depth);
-        draw_text(40, 426, line); // Keep the texture diagnostic on-screen.
     }
     pvr_list_finish();
     pvr_scene_finish();
