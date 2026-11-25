@@ -924,6 +924,7 @@ struct PvrRenderStats {
     uint32_t first_screen_count = 0;
     float vp_x = 0.0f, vp_y = 0.0f, vp_w = 0.0f, vp_h = 0.0f;
     float fr_left = 0.0f, fr_right = 0.0f, fr_top = 0.0f, fr_bottom = 0.0f;
+    float matrix_rows[12] = {};
 };
 
 static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selected_mesh)
@@ -947,6 +948,12 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                 stats.vp_w = viewport.vp_w; stats.vp_h = viewport.vp_h;
                 stats.fr_left = viewport.left; stats.fr_right = viewport.right;
                 stats.fr_top = viewport.top; stats.fr_bottom = viewport.bottom;
+                for (size_t row = 0; row < 3; ++row) {
+                    stats.matrix_rows[row * 4 + 0] = model.matrix.m[row];
+                    stats.matrix_rows[row * 4 + 1] = model.matrix.m[4 + row];
+                    stats.matrix_rows[row * 4 + 2] = model.matrix.m[8 + row];
+                    stats.matrix_rows[row * 4 + 3] = model.matrix.m[12 + row];
+                }
                 const bool textured = !kForceSolidWhiteDiagnostic && real_texture != nullptr;
                 if (textured) {
                     pvr_poly_cxt_txr(&cxt, PVR_LIST_OP_POLY,
@@ -1084,7 +1091,7 @@ static void draw_pvr_translucent_control_triangle()
     v.argb = 0xFFFF2020u; pvr_prim(&v, sizeof(v));
 }
 
-static void draw_screen(const Results &r, size_t selected_mesh)
+static void draw_screen(const Results &r, size_t selected_mesh, unsigned diagnostic_page)
 {
     pvr_wait_ready();
     pvr_scene_begin();
@@ -1175,33 +1182,58 @@ static void draw_screen(const Results &r, size_t selected_mesh)
         draw_text(40, 444, r.pvr_scene ? "SCENEBUILDER -> PVR2 TRIANGLES: PASS" : "SCENEBUILDER -> PVR2 TRIANGLES: FAIL");
         draw_text(40, 462, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
     } else {
-        snprintf(line, sizeof(line), "M%u V:%u T:%u OK:%u BAD:%u",
+        snprintf(line, sizeof(line), "M%u V%u T%u OK%u BAD%u P%u",
             static_cast<unsigned>(selected_mesh + 1),
             static_cast<unsigned>(pvr_stats.mesh_vertices),
             static_cast<unsigned>(pvr_stats.mesh_triangles),
             static_cast<unsigned>(pvr_stats.triangles_submitted),
-            static_cast<unsigned>(pvr_stats.triangles_rejected));
+            static_cast<unsigned>(pvr_stats.triangles_rejected),
+            diagnostic_page);
         draw_text(40, 390, line);
-        snprintf(line, sizeof(line), "SRC X %.1f..%.1f Y %.1f..%.1f",
-            pvr_stats.source_min[0], pvr_stats.source_max[0],
-            pvr_stats.source_min[1], pvr_stats.source_max[1]);
-        draw_text(40, 404, line);
-        snprintf(line, sizeof(line), "SRC Z %.1f..%.1f WORLD Z %.1f..%.1f",
-            pvr_stats.source_min[2], pvr_stats.source_max[2],
-            pvr_stats.world_min[2], pvr_stats.world_max[2]);
-        draw_text(40, 418, line);
-        snprintf(line, sizeof(line), "WORLD X %.1f..%.1f Y %.1f..%.1f",
-            pvr_stats.world_min[0], pvr_stats.world_max[0],
-            pvr_stats.world_min[1], pvr_stats.world_max[1]);
-        draw_text(40, 432, line);
-        snprintf(line, sizeof(line), "SCR P0 %.0f,%.0f P1 %.0f,%.0f",
-            pvr_stats.first_screen_x[0], pvr_stats.first_screen_y[0],
-            pvr_stats.first_screen_x[1], pvr_stats.first_screen_y[1]);
-        draw_text(40, 446, line);
-        snprintf(line, sizeof(line), "P2 %.0f,%.0f VP %.0f,%.0f %.0fx%.0f",
-            pvr_stats.first_screen_x[2], pvr_stats.first_screen_y[2],
-            pvr_stats.vp_x, pvr_stats.vp_y, pvr_stats.vp_w, pvr_stats.vp_h);
-        draw_text(40, 460, line);
+        if (diagnostic_page == 0) {
+            snprintf(line, sizeof(line), "SRC X %.2g..%.2g Y %.2g..%.2g",
+                pvr_stats.source_min[0], pvr_stats.source_max[0],
+                pvr_stats.source_min[1], pvr_stats.source_max[1]);
+            draw_text(40, 404, line);
+            snprintf(line, sizeof(line), "SRC Z %.2g..%.2g",
+                pvr_stats.source_min[2], pvr_stats.source_max[2]);
+            draw_text(40, 418, line);
+            snprintf(line, sizeof(line), "M0 %.2g %.2g %.2g T%.2g",
+                pvr_stats.matrix_rows[0], pvr_stats.matrix_rows[1],
+                pvr_stats.matrix_rows[2], pvr_stats.matrix_rows[3]);
+            draw_text(40, 432, line);
+            snprintf(line, sizeof(line), "M1 %.2g %.2g %.2g T%.2g",
+                pvr_stats.matrix_rows[4], pvr_stats.matrix_rows[5],
+                pvr_stats.matrix_rows[6], pvr_stats.matrix_rows[7]);
+            draw_text(40, 446, line);
+            snprintf(line, sizeof(line), "M2 %.2g %.2g %.2g T%.2g",
+                pvr_stats.matrix_rows[8], pvr_stats.matrix_rows[9],
+                pvr_stats.matrix_rows[10], pvr_stats.matrix_rows[11]);
+            draw_text(40, 460, line);
+        } else {
+            snprintf(line, sizeof(line), "CAM X %.2g..%.2g Y %.2g..%.2g",
+                pvr_stats.world_min[0], pvr_stats.world_max[0],
+                pvr_stats.world_min[1], pvr_stats.world_max[1]);
+            draw_text(40, 404, line);
+            snprintf(line, sizeof(line), "CAM Z %.2g..%.2g DEPTH %.2g..%.2g",
+                pvr_stats.world_min[2], pvr_stats.world_max[2],
+                pvr_stats.min_depth, pvr_stats.max_depth);
+            draw_text(40, 418, line);
+            snprintf(line, sizeof(line), "P0 %.3g,%.3g P1 %.3g,%.3g",
+                pvr_stats.first_screen_x[0], pvr_stats.first_screen_y[0],
+                pvr_stats.first_screen_x[1], pvr_stats.first_screen_y[1]);
+            draw_text(40, 432, line);
+            snprintf(line, sizeof(line), "P2 %.3g,%.3g VP %.3g,%.3g %.3gx%.3g",
+                pvr_stats.first_screen_x[2], pvr_stats.first_screen_y[2],
+                pvr_stats.vp_x, pvr_stats.vp_y, pvr_stats.vp_w, pvr_stats.vp_h);
+            draw_text(40, 446, line);
+            snprintf(line, sizeof(line), "FR L/R %.3g %.3g",
+                pvr_stats.fr_left, pvr_stats.fr_right);
+            draw_text(40, 460, line);
+            snprintf(line, sizeof(line), "FR B/T %.3g %.3g",
+                pvr_stats.fr_bottom, pvr_stats.fr_top);
+            draw_text(40, 474, line);
+        }
     }
     pvr_list_finish();
     pvr_scene_finish();
@@ -1229,7 +1261,8 @@ int main()
     unsigned frame = 0;
     for (;;) {
         const size_t selected_mesh = (frame / 180u) % 9u;
-        draw_screen(results, selected_mesh);
+        const unsigned diagnostic_page = (frame / 90u) & 1u;
+        draw_screen(results, selected_mesh, diagnostic_page);
         ++frame;
         thd_sleep(16);
     }
