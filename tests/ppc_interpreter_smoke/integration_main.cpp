@@ -1045,7 +1045,11 @@ static void draw_screen(const Results &r)
     pvr_wait_ready();
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_OP_POLY);
-    const PvrRenderStats pvr_stats = draw_scene_builder_output(r);
+    // v225 isolates the PVR opaque-list control primitive from SceneBuilder output.
+    // If this green triangle appears, an earlier real-scene primitive/list state is
+    // interfering; if it remains absent while the TR control works, investigate
+    // opaque-list setup independently.
+    const PvrRenderStats pvr_stats{};
     draw_pvr_control_triangle();
     pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
