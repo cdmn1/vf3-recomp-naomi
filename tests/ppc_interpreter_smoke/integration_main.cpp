@@ -92,6 +92,8 @@ struct Results {
     std::vector<RenderTexture> render_textures;
     uint32_t render_textures_ready = 0;
     uint32_t render_textures_failed = 0;
+    uint32_t texture_alpha_zero = 0, texture_alpha_opaque = 0;
+    uint32_t texture_rgb_unique = 0;
     alignas(32) uint16_t pvr_texture_pixels[32 * 32] = {};
     bool pvr_texture_source = false;
     int mount_status = 0;
@@ -183,6 +185,19 @@ static void prepare_real3d_textures(Results &r, const m3::Model3 &board)
                         real3d_texture_upload[y * out_w + x] = decode_real3d_texel(raw, mesh.format);
                     }
                 }
+                uint32_t alpha_zero = 0, alpha_opaque = 0;
+                uint16_t first_rgb = real3d_texture_upload[0] & 0x0FFFu;
+                bool rgb_varies = false;
+                for (int i = 0; i < out_w * out_h; ++i) {
+                    const uint16_t pixel = real3d_texture_upload[i];
+                    const unsigned alpha = pixel >> 12;
+                    if (alpha == 0) ++alpha_zero;
+                    if (alpha == 15) ++alpha_opaque;
+                    if ((pixel & 0x0FFFu) != first_rgb) rgb_varies = true;
+                }
+                r.texture_alpha_zero += alpha_zero;
+                r.texture_alpha_opaque += alpha_opaque;
+                r.texture_rgb_unique += rgb_varies ? 1u : 0u;
                 pvr_txr_load(real3d_texture_upload, texture, out_w * out_h * 2);
                 r.render_textures.push_back({&mesh, texture, static_cast<uint16_t>(out_w), static_cast<uint16_t>(out_h)});
                 ++r.render_textures_ready;
@@ -891,6 +906,9 @@ struct PvrRenderStats {
     float min_x = 1.0e9f, min_y = 1.0e9f;
     float max_x = -1.0e9f, max_y = -1.0e9f;
     uint32_t vertices_offscreen = 0;
+    float min_u = 1.0e9f, min_v = 1.0e9f;
+    float max_u = -1.0e9f, max_v = -1.0e9f;
+    float min_depth = 1.0e9f, max_depth = -1.0e9f;
 };
 
 static PvrRenderStats draw_scene_builder_output(const Results &r)
@@ -946,11 +964,19 @@ static PvrRenderStats draw_scene_builder_output(const Results &r)
                             break;
                         }
                         vertex.z = 1.0f;
+                        stats.min_depth = std::min(stats.min_depth, depth);
+                        stats.max_depth = std::max(stats.max_depth, depth);
                         // SceneBuilder UVs are measured in texels (1.0 = one source texel),
                         // while PVR2 expects normalized coordinates. Keep the original
                         // mesh dimensions here even when its upload was downscaled to 128 (real VF3 rebuild).
                         vertex.u = textured ? source.uv[0] / float(mesh.width) : 0.0f;
                         vertex.v = textured ? source.uv[1] / float(mesh.height) : 0.0f;
+                        if (textured) {
+                            stats.min_u = std::min(stats.min_u, vertex.u);
+                            stats.max_u = std::max(stats.max_u, vertex.u);
+                            stats.min_v = std::min(stats.min_v, vertex.v);
+                            stats.max_v = std::max(stats.max_v, vertex.v);
+                        }
                         vertex.argb = PVR_PACK_COLOR(
                             model.alpha * source.colour[3] / 255.0f,
                             source.colour[0] / 255.0f,
@@ -980,12 +1006,30 @@ static PvrRenderStats draw_scene_builder_output(const Results &r)
     return stats;
 }
 
+static void draw_pvr_control_triangle()
+{
+    pvr_poly_cxt_t cxt;
+    pvr_poly_hdr_t header;
+    pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
+    cxt.gen.culling = PVR_CULLING_NONE;
+    pvr_poly_compile(&header, &cxt);
+    pvr_prim(&header, sizeof(header));
+    pvr_vertex_t v{};
+    v.flags = PVR_CMD_VERTEX; v.x = 570.0f; v.y = 112.0f; v.z = 1.0f;
+    v.argb = 0xFF20FF20u; pvr_prim(&v, sizeof(v));
+    v.flags = PVR_CMD_VERTEX; v.x = 630.0f; v.y = 112.0f; v.z = 1.0f;
+    v.argb = 0xFF20FF20u; pvr_prim(&v, sizeof(v));
+    v.flags = PVR_CMD_VERTEX_EOL; v.x = 600.0f; v.y = 172.0f; v.z = 1.0f;
+    v.argb = 0xFF20FF20u; pvr_prim(&v, sizeof(v));
+}
+
 static void draw_screen(const Results &r)
 {
     pvr_wait_ready();
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_OP_POLY);
     const PvrRenderStats pvr_stats = draw_scene_builder_output(r);
+    draw_pvr_control_triangle();
     pvr_list_finish();
     pvr_list_begin(PVR_LIST_TR_POLY);
     char title[64];
@@ -1083,12 +1127,17 @@ static void draw_screen(const Results &r)
     if (r.synthetic_fixture)
         draw_text(40, 462, scene_texture_ready ? "MODEL3 TEXTURE -> PVR2: PASS" : "MODEL3 TEXTURE -> PVR2: FAIL");
     else {
-        snprintf(line, sizeof(line), "XY:%.0f,%.0f-%.0f,%.0f OUT:%u TEX:%u/%u",
-            pvr_stats.min_x, pvr_stats.min_y, pvr_stats.max_x, pvr_stats.max_y,
-            static_cast<unsigned>(pvr_stats.vertices_offscreen),
+        snprintf(line, sizeof(line), "UV:%.2f-%.2f/%.2f-%.2f TEX:%u/%u",
+            pvr_stats.min_u, pvr_stats.max_u, pvr_stats.min_v, pvr_stats.max_v,
             static_cast<unsigned>(r.render_textures_ready),
             static_cast<unsigned>(r.render_textures_failed));
         draw_text(40, 462, line);
+        snprintf(line, sizeof(line), "TEX A0:%u A15:%u RGB:%u D:%.1f-%.1f",
+            static_cast<unsigned>(r.texture_alpha_zero),
+            static_cast<unsigned>(r.texture_alpha_opaque),
+            static_cast<unsigned>(r.texture_rgb_unique),
+            pvr_stats.min_depth, pvr_stats.max_depth);
+        draw_text(40, 480, line);
     }
     pvr_list_finish();
     pvr_scene_finish();
