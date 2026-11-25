@@ -41,6 +41,9 @@ const Profile VF3_REV_D = [] {
 // initializes the Model3 board, and exercises the production storage/render paths.
 
 
+// v228 isolates real VF3 geometry from all source material/texture state.
+static constexpr bool kForceSolidWhiteDiagnostic = true;
+
 struct RenderTexture {
     const video::Mesh *mesh = nullptr;
     pvr_ptr_t texture = nullptr;
@@ -926,7 +929,7 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                 uint16_t texture_width = 0, texture_height = 0;
                 const pvr_ptr_t real_texture = mesh.textured ?
                     real3d_texture_for(r, mesh, texture_width, texture_height) : nullptr;
-                const bool textured = real_texture != nullptr;
+                const bool textured = !kForceSolidWhiteDiagnostic && real_texture != nullptr;
                 if (textured) {
                     pvr_poly_cxt_txr(&cxt, PVR_LIST_OP_POLY,
                         PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED,
@@ -980,11 +983,12 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                             stats.min_v = std::min(stats.min_v, vertex.v);
                             stats.max_v = std::max(stats.max_v, vertex.v);
                         }
-                        vertex.argb = PVR_PACK_COLOR(
-                            model.alpha * source.colour[3] / 255.0f,
-                            source.colour[0] / 255.0f,
-                            source.colour[1] / 255.0f,
-                            source.colour[2] / 255.0f);
+                        vertex.argb = kForceSolidWhiteDiagnostic ? 0xFFFFFFFFu :
+                            PVR_PACK_COLOR(
+                                model.alpha * source.colour[3] / 255.0f,
+                                source.colour[0] / 255.0f,
+                                source.colour[1] / 255.0f,
+                                source.colour[2] / 255.0f);
                         vertex.oargb = 0;
                         stats.min_x = std::min(stats.min_x, vertex.x);
                         stats.min_y = std::min(stats.min_y, vertex.y);
@@ -1061,7 +1065,7 @@ static void draw_screen(const Results &r, size_t selected_mesh)
     snprintf(title, sizeof(title), "VF3 NAOMI - MODEL3 INTEGRATION %s", VF3_BUILD_VERSION);
     draw_text(40, 48, title);
     draw_text(40, 72, r.synthetic_fixture ?
-        "SYNTHETIC ROM DATA - TEST FIXTURE" : "REAL VF3 REV D ROM PAYLOAD");
+        "SYNTHETIC ROM DATA - TEST FIXTURE" : "REAL VF3 REV D - WHITE GEOMETRY TEST");
     draw_text(40, 96, r.mount ? "NETDIMM IMAGE MOUNT: PASS" : "NETDIMM IMAGE MOUNT: FAIL");
     draw_text(40, 120, r.board ? "MODEL3 BOARD INIT: PASS" : "MODEL3 BOARD INIT: FAIL");
     draw_text(40, 138, r.synthetic_fixture ?
