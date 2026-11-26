@@ -138,6 +138,11 @@ struct Results {
     size_t real_program_match_words = 0;
     size_t real_scene_viewports = 0;
     size_t real_scene_models = 0;
+    uint32_t diagnostic_model_addr = 0;
+    std::vector<uint32_t> diagnostic_mesh_keys;
+    uint32_t diagnostic_raw_words[19] = {};
+    uint32_t diagnostic_raw_count = 0;
+    uint32_t diagnostic_raw_status = 0;
 };
 
 static void draw_boot_progress(uint32_t frame, uint32_t pc, uint64_t cycles);
@@ -560,9 +565,9 @@ static Results run_integration()
         draw_boot_progress(0, board.cpu.s.pc, 0);
         uint32_t previous_pc = board.cpu.s.pc;
         uint32_t previous_srr0 = board.cpu.s.srr0;
-        // Match the upstream Revision D profile's 960-frame boot window.
+        // Run 240 frames beyond the upstream Revision D 960-frame boot window to check scene progression.
         // Sample the documented interrupt-driven idle poll and interrupt state.
-        for (uint32_t frame = 0; frame < 960 && !board.cpu.s.fatal; ++frame) {
+        for (uint32_t frame = 0; frame < 1200 && !board.cpu.s.fatal; ++frame) {
             board.run_frame();
             ++r.real_boot_frames;
             r.real_boot_irq_pending_or |= static_cast<uint32_t>(board.cpu.s.interrupt_pending);
@@ -626,12 +631,31 @@ static Results run_integration()
         video::SceneBuilder builder;
         builder.build(board, r.render_scene);
         r.real_scene_viewports = r.render_scene.viewports.size();
+        r.diagnostic_mesh_keys.clear();
         for (const video::Viewport &viewport : r.render_scene.viewports) {
             r.real_scene_models += viewport.models.size();
             for (const video::Model &model : viewport.models) {
                 if (!model.meshes) continue;
-                for (const video::Mesh &mesh : *model.meshes)
+                if (r.diagnostic_model_addr == 0) {
+                    r.diagnostic_model_addr = model.addr;
+                    if (model.addr < 0x00100000u) {
+                        const size_t available = board.poly_ram.size() - std::min<size_t>(model.addr, board.poly_ram.size());
+                        r.diagnostic_raw_count = static_cast<uint32_t>(std::min<size_t>(19u, available));
+                        for (uint32_t i = 0; i < r.diagnostic_raw_count; ++i)
+                            r.diagnostic_raw_words[i] = board.poly_ram[model.addr + i];
+                        r.diagnostic_raw_status = 0;
+                    } else {
+                        r.diagnostic_raw_count = 19u;
+                        r.diagnostic_raw_status = static_cast<uint32_t>(
+                            naomi_model3_vrom_read_words(model.addr, r.diagnostic_raw_words, r.diagnostic_raw_count));
+                        if (r.diagnostic_raw_status != NAOMI_CART_VROM_OK)
+                            r.diagnostic_raw_count = 0;
+                    }
+                }
+                for (const video::Mesh &mesh : *model.meshes) {
                     r.vertices += mesh.verts.size();
+                    r.diagnostic_mesh_keys.push_back(static_cast<uint32_t>(mesh.key));
+                }
             }
         }
         r.meshes = r.real_scene_models;
@@ -923,6 +947,8 @@ struct PvrRenderStats {
     float first_screen_x[3] = {};
     float first_screen_y[3] = {};
     uint32_t first_screen_count = 0;
+    uint32_t model_addr = 0;
+    uint32_t mesh_key = 0;
     float vp_x = 0.0f, vp_y = 0.0f, vp_w = 0.0f, vp_h = 0.0f;
     float fr_left = 0.0f, fr_right = 0.0f, fr_top = 0.0f, fr_bottom = 0.0f;
     float matrix_rows[12] = {};
@@ -955,6 +981,8 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                 uint16_t texture_width = 0, texture_height = 0;
                 const pvr_ptr_t real_texture = mesh.textured ?
                     real3d_texture_for(r, mesh, texture_width, texture_height) : nullptr;
+                stats.model_addr = model.addr;
+                stats.mesh_key = static_cast<uint32_t>(mesh.key);
                 stats.mesh_vertices = static_cast<uint32_t>(mesh.verts.size());
                 stats.mesh_triangles = static_cast<uint32_t>(mesh.verts.size() / 3u);
                 stats.vp_x = viewport.vp_x; stats.vp_y = viewport.vp_y;
@@ -1343,7 +1371,7 @@ static void draw_screen(const Results &r, size_t selected_mesh, unsigned diagnos
                     pvr_stats.matrix_rows[row * 4u + 2u], pvr_stats.matrix_rows[row * 4u + 3u]);
                 draw_text(40, 426 + int(row) * 16, line);
             }
-        } else {
+        } else if (diagnostic_page == 2u) {
             draw_text(40, 408, "CAMERA SPACE / UPSTREAM CLIP RESULT");
             for (size_t j = 0; j < 3; ++j) {
                 snprintf(line, sizeof(line), "C%u %.4g %.4g %.4g",
@@ -1357,6 +1385,19 @@ static void draw_screen(const Results &r, size_t selected_mesh, unsigned diagnos
                 pvr_stats.clipped_min_x, pvr_stats.clipped_max_x,
                 pvr_stats.clipped_min_y, pvr_stats.clipped_max_y);
             draw_text(40, 474, line);
+        } else {
+            snprintf(line, sizeof(line), "MODEL:%08X KEY:%08X", pvr_stats.model_addr, pvr_stats.mesh_key);
+            draw_text(40, 408, line);
+            snprintf(line, sizeof(line), "FIRST MODEL:%08X RAW:%u STATUS:%u",
+                r.diagnostic_model_addr, r.diagnostic_raw_count, r.diagnostic_raw_status);
+            draw_text(40, 426, line);
+            for (size_t i = 0; i < 4; ++i) {
+                snprintf(line, sizeof(line), "H%u %08X %08X %08X %08X",
+                    static_cast<unsigned>(i * 4u),
+                    r.diagnostic_raw_words[i * 4u], r.diagnostic_raw_words[i * 4u + 1u],
+                    r.diagnostic_raw_words[i * 4u + 2u], r.diagnostic_raw_words[i * 4u + 3u]);
+                draw_text(40, 444 + int(i) * 16, line);
+            }
         }
     }
     pvr_list_finish();
@@ -1385,7 +1426,7 @@ int main()
     unsigned frame = 0;
     for (;;) {
         const size_t selected_mesh = (frame / 180u) % 9u;
-        const unsigned diagnostic_page = (frame / 60u) % 3u;
+        const unsigned diagnostic_page = (frame / 60u) % 4u;
         draw_screen(results, selected_mesh, diagnostic_page);
         ++frame;
         thd_sleep(16);
