@@ -927,6 +927,7 @@ struct PvrRenderStats {
     float fr_left = 0.0f, fr_right = 0.0f, fr_top = 0.0f, fr_bottom = 0.0f;
     float matrix_rows[12] = {};
     // v236: upstream Model 3 near/guard-band clipping diagnostics for the first triangle.
+    float first_source[9] = {};
     float first_camera[9] = {};
     float clip_min[5] = {1.0e9f, 1.0e9f, 1.0e9f, 1.0e9f, 1.0e9f};
     uint32_t clip_inside[5] = {};
@@ -1045,6 +1046,9 @@ static PvrRenderStats draw_scene_builder_output(const Results &r, size_t selecte
                         v.g = source.colour[1] / 255.0f;
                         v.b = source.colour[2] / 255.0f;
                         if (first == 0u) {
+                            stats.first_source[j * 3u + 0u] = source.pos[0];
+                            stats.first_source[j * 3u + 1u] = source.pos[1];
+                            stats.first_source[j * 3u + 2u] = source.pos[2];
                             stats.first_camera[j * 3u + 0u] = v.p[0];
                             stats.first_camera[j * 3u + 1u] = v.p[1];
                             stats.first_camera[j * 3u + 2u] = v.p[2];
@@ -1313,27 +1317,47 @@ static void draw_screen(const Results &r, size_t selected_mesh, unsigned diagnos
             static_cast<unsigned>(pvr_stats.triangles_rejected),
             diagnostic_page);
         draw_text(40, 390, line);
-        // v236 keeps one stable diagnostic page per mesh so a single capture
-        // records the full comparison, rather than cycling three pages.
-        snprintf(line, sizeof(line), "CAM P0 %.2g %.2g %.2g",
-            pvr_stats.first_camera[0], pvr_stats.first_camera[1], pvr_stats.first_camera[2]);
-        draw_text(40, 404, line);
-        snprintf(line, sizeof(line), "CAM P1 %.2g %.2g %.2g",
-            pvr_stats.first_camera[3], pvr_stats.first_camera[4], pvr_stats.first_camera[5]);
-        draw_text(40, 418, line);
-        snprintf(line, sizeof(line), "CAM P2 %.2g %.2g %.2g",
-            pvr_stats.first_camera[6], pvr_stats.first_camera[7], pvr_stats.first_camera[8]);
-        draw_text(40, 432, line);
-        snprintf(line, sizeof(line), "CLIP POLYGON VERTICES: %u",
-            static_cast<unsigned>(pvr_stats.clipped_vertex_count));
-        draw_text(40, 446, line);
-        snprintf(line, sizeof(line), "CLIP XY %.3g..%.3g %.3g..%.3g",
-            pvr_stats.clipped_min_x, pvr_stats.clipped_max_x,
-            pvr_stats.clipped_min_y, pvr_stats.clipped_max_y);
-        draw_text(40, 460, line);
-        snprintf(line, sizeof(line), "UPSTREAM vs PVR MAX XY DELTA: %.3g",
-            pvr_stats.max_projection_delta);
-        draw_text(40, 474, line);
+        snprintf(line, sizeof(line), "M%u V%u T%u OK%u BAD%u P%u",
+            static_cast<unsigned>(selected_mesh + 1),
+            static_cast<unsigned>(pvr_stats.mesh_vertices),
+            static_cast<unsigned>(pvr_stats.mesh_triangles),
+            static_cast<unsigned>(pvr_stats.triangles_submitted),
+            static_cast<unsigned>(pvr_stats.triangles_rejected),
+            diagnostic_page);
+        draw_text(40, 390, line);
+        if (diagnostic_page == 0u) {
+            draw_text(40, 408, "SOURCE VERTICES (UPSTREAM INPUT)");
+            for (size_t j = 0; j < 3; ++j) {
+                snprintf(line, sizeof(line), "S%u %.4g %.4g %.4g",
+                    static_cast<unsigned>(j),
+                    pvr_stats.first_source[j * 3u], pvr_stats.first_source[j * 3u + 1u],
+                    pvr_stats.first_source[j * 3u + 2u]);
+                draw_text(40, 426 + int(j) * 16, line);
+            }
+        } else if (diagnostic_page == 1u) {
+            draw_text(40, 408, "MODEL MATRIX (UPSTREAM INPUT)");
+            for (size_t row = 0; row < 3; ++row) {
+                snprintf(line, sizeof(line), "M%u %.4g %.4g %.4g %.4g",
+                    static_cast<unsigned>(row),
+                    pvr_stats.matrix_rows[row * 4u], pvr_stats.matrix_rows[row * 4u + 1u],
+                    pvr_stats.matrix_rows[row * 4u + 2u], pvr_stats.matrix_rows[row * 4u + 3u]);
+                draw_text(40, 426 + int(row) * 16, line);
+            }
+        } else {
+            draw_text(40, 408, "CAMERA SPACE / UPSTREAM CLIP RESULT");
+            for (size_t j = 0; j < 3; ++j) {
+                snprintf(line, sizeof(line), "C%u %.4g %.4g %.4g",
+                    static_cast<unsigned>(j),
+                    pvr_stats.first_camera[j * 3u], pvr_stats.first_camera[j * 3u + 1u],
+                    pvr_stats.first_camera[j * 3u + 2u]);
+                draw_text(40, 426 + int(j) * 16, line);
+            }
+            snprintf(line, sizeof(line), "CLIP V:%u XY %.3g..%.3g %.3g..%.3g",
+                static_cast<unsigned>(pvr_stats.clipped_vertex_count),
+                pvr_stats.clipped_min_x, pvr_stats.clipped_max_x,
+                pvr_stats.clipped_min_y, pvr_stats.clipped_max_y);
+            draw_text(40, 474, line);
+        }
     }
     pvr_list_finish();
     pvr_scene_finish();
@@ -1361,7 +1385,8 @@ int main()
     unsigned frame = 0;
     for (;;) {
         const size_t selected_mesh = (frame / 180u) % 9u;
-        draw_screen(results, selected_mesh, 0u);
+        const unsigned diagnostic_page = (frame / 60u) % 3u;
+        draw_screen(results, selected_mesh, diagnostic_page);
         ++frame;
         thd_sleep(16);
     }
